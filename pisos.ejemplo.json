@@ -1,0 +1,8 @@
+{
+  "_": "Directorio de pisos de la oficina (ejemplo): cópialo a pisos.json y edítalo. De abajo (planta baja) hacia arriba. Cada fragmento se compara, sin mayúsculas, con la carpeta del proyecto (cwd) y con el título de la sesión; gana el primer piso que coincida. El piso sin 'proyectos' recoge lo que no encaja en ninguno. Solo se usa cuando la app de escritorio no tiene grupos en el sidebar; el servidor lo relee en cada refresco.",
+  "pisos": [
+    {"nombre": "Central",   "proyectos": ["notas", "planeacion"]},
+    {"nombre": "Producto",  "proyectos": ["mi-app", "mi-api", "web-"]},
+    {"nombre": "Otros"}
+  ]
+}

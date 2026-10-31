@@ -1,0 +1,11 @@
+{
+  "name": "navis-raid",
+  "displayName": "Navis Raid",
+  "version": "0.2.0",
+  "description": "A local pixel-art dashboard of your Claude Code sessions, with no tokens and no network.",
+  "author": {"name": "Victor Moreno"},
+  "homepage": "https://github.com/victor198siete/navis-raid",
+  "repository": "https://github.com/victor198siete/navis-raid",
+  "license": "MIT",
+  "keywords": ["dashboard", "sessions", "monitoring", "pixel-art", "local"]
+}

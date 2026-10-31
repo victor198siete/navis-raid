@@ -1,0 +1,11 @@
+index.html
+tabla.html
+estado.json
+__pycache__/
+_preview-*.html
+_preview-*.jpg
+chat/
+*.tmp
+bitacora/
+config.json
+pisos.json

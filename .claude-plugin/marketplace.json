@@ -1,0 +1,12 @@
+{
+  "name": "navis-raid",
+  "description": "Navis Raid: a local pixel-art dashboard of your Claude Code sessions.",
+  "owner": {"name": "Victor Moreno"},
+  "plugins": [
+    {
+      "name": "navis-raid",
+      "source": "./",
+      "description": "A local pixel-art dashboard of your Claude Code sessions, with no tokens and no network."
+    }
+  ]
+}
