@@ -46,7 +46,7 @@ def anotar(datos, fuente):
     if not lineas:
         sys.exit('el JSON no trae plan.windows')
     os.makedirs(bitacora.DIR, exist_ok=True)
-    with open(bitacora.CUOTA, 'a') as fh:
+    with open(bitacora.CUOTA, 'a', encoding='utf-8') as fh:
         fh.writelines(json.dumps(l, ensure_ascii=False) + '\n' for l in lineas)
     return lineas
 

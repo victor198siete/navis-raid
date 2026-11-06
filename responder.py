@@ -37,7 +37,7 @@ def main():
     if not texto:
         sys.exit('falta el texto de la respuesta')
     os.makedirs(os.path.join(datos, 'chat'), exist_ok=True)
-    with open(os.path.join(datos, 'chat', 'hilo.jsonl'), 'a') as fh:
+    with open(os.path.join(datos, 'chat', 'hilo.jsonl'), 'a', encoding='utf-8') as fh:
         fh.write(json.dumps({'cuando': dt.datetime.now(dt.timezone.utc).isoformat(), 'de': DE, 'texto': texto},
                             ensure_ascii=False) + '\n')
     print(f'anotado en el hilo de la oficina ({len(texto)} caracteres)')

@@ -11,8 +11,8 @@ plain Python 3 with no dependencies, and it serves only on `127.0.0.1`.
 ## Requirements
 
 - Python 3.9 or newer (tested with the 3.9 that ships with macOS and with 3.14). 3.8 is not tested.
-- macOS or Linux, with Claude Code installed and used at least once (there must be transcripts to read). Windows
-  is not supported yet, only because it has not been tested.
+- macOS or Linux, with Claude Code installed and used at least once (there must be transcripts to read). Windows:
+  run it by hand (`python oficina.py --serve`), without the background service or the chat (see Quick start).
 - The Claude desktop app is optional. If it is installed on macOS, Navis Raid also uses its session titles, pinned
   sessions, scheduled tasks and sidebar groups (each group becomes a floor).
 
@@ -67,6 +67,18 @@ python3 oficina.py --serve 8765
 
 Then open <http://127.0.0.1:8765/>. The page regenerates on every load and refreshes itself every few seconds.
 Stop the server with Ctrl+C.
+
+**On Windows** start it by hand from a terminal (`py` or `python`, whichever you have; there is no `python3` command by default):
+
+```bat
+cd path\to\oficina
+py oficina.py --serve 8765
+```
+
+`py oficina.py --doctor` works too. On Windows there is no background service (`--instalar-servicio` and
+`--quitar-servicio` answer that the service is not supported) and the chat is off, even if `chat_sesion` is set in
+`config.json`, because it talks to Claude Code through Unix sockets. Everything else is the same. This level was
+checked **simulated** (a test pretends to be Windows), not on a real Windows machine yet.
 
 The file names and some folder names are in Spanish (`oficina` = office, `pruebas` = tests, `bitacora` = log); the
 interface itself can be shown in English (see Language).

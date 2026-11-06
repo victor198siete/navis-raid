@@ -261,7 +261,7 @@ def main():
     ruta = os.path.join(tmp, 'sin-chat.json')
     with open(ruta, 'w', encoding='utf-8') as fh:
         json.dump({'chat_sesion': None, 'idioma': 'es'}, fh)
-    p = subprocess.run([sys.executable, '-c', CODIGO_SIN_CHAT], capture_output=True, text=True, timeout=180,
+    p = subprocess.run([sys.executable, '-c', CODIGO_SIN_CHAT], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180,
                        env=dict(os.environ, NAVIS_RAID_CONFIG=ruta))
     if p.returncode != 0:
         comprobar(False, 'sin chat_sesion: el subproceso corre (' + (p.stderr.strip().splitlines() or ['?'])[-1] + ')')
@@ -350,7 +350,7 @@ def prueba_salida(comprobar):
     cfg = os.path.join(tmp, 'sin-chat.json')
     with open(cfg, 'w', encoding='utf-8') as fh:
         json.dump({'chat_sesion': None, 'idioma': 'es'}, fh)
-    p = subprocess.run([sys.executable, '-c', CODIGO_SALIDA_SIN_CHAT], capture_output=True, text=True, timeout=180,
+    p = subprocess.run([sys.executable, '-c', CODIGO_SALIDA_SIN_CHAT], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180,
                        env=dict(os.environ, NAVIS_RAID_CONFIG=cfg, NAVIS_RAID_DATA=tmp))
     if p.returncode != 0:
         comprobar(False, 'sin chat_sesion (salida): el subproceso corre (' + (p.stderr.strip().splitlines() or ['?'])[-1] + ')')
@@ -423,7 +423,7 @@ def salida_main(comprobar):
                PYTHONUNBUFFERED='1')
     env.pop('NAVIS_RAID_SERVICIO', None)
     proc = subprocess.Popen([sys.executable, os.path.join(AQUI, 'oficina.py'), '--serve', '0'], env=env,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
     try:
         fin = time.time() + 60
         linea = ''
@@ -434,7 +434,7 @@ def salida_main(comprobar):
             err = proc.stderr.read() if proc.poll() is not None else ''
             if 'PermissionError' in err or 'Operation not permitted' in err:
                 print('(sin permiso para hacer bind: main(--serve) se prueba con el servidor por socketpair)')
-                p = subprocess.run([sys.executable, '-c', CODIGO_MAIN_SIN_BIND], capture_output=True, text=True, timeout=120, env=env)
+                p = subprocess.run([sys.executable, '-c', CODIGO_MAIN_SIN_BIND], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120, env=env)
                 comprobar(p.returncode == 0, f'main([--serve, 0]) tras POST /salida sale con 0 (socketpair; código {p.returncode}'
                           + ('' if p.returncode == 0 else ': ' + (p.stderr.strip().splitlines() or ['?'])[-1]) + ')')
                 return

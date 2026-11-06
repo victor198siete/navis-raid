@@ -18,6 +18,8 @@ llamadas (y, por si acaso, hace explotar `subprocess.run` mientras corre). Compr
   8. (E8e-4) con el puerto ocupado por otra cosa `instalar` no instala (código 4, nada escrito, ningún runner) y sugiere
      el primer puerto libre; si lo ocupa nuestro propio servicio, es una reinstalación y sigue. Con `verificar=True`
      (lo que pasa `oficina.py --instalar-servicio`) espera a que el servicio escuche y, si no llega, sale con 5.
+  9. (E8f-A) con `platform.system() == 'Windows'` instalar y quitar responden «no soportado», con código distinto de 0 y sin
+     ejecutar ni escribir nada; `--estado-servicio` informa lo mismo y sale con 0.
 
 Uso: python3 pruebas/servicio.py
 """
@@ -118,6 +120,7 @@ def en_proceso(servicio, tmp, comprobar):
         datos = os.path.join(tmp, 'mis datos')              # con espacio, a propósito
         codigo_1 = os.path.join(tmp, 'plugin 0.1.0', 'oficina.py')
         codigo_2 = os.path.join(tmp, 'plugin 0.2.0', 'oficina.py')
+        sistema_real = servicio.sistema           # el de verdad (platform.system()), por si una prueba lo necesita
         servicio.home = lambda: casa
         servicio.uid = lambda: 501
         servicio.datos = lambda: datos
@@ -215,6 +218,20 @@ def en_proceso(servicio, tmp, comprobar):
         codigo, salida = captura(servicio.instalar, 8765, codigo_1, runner=r)
         comprobar(codigo != 0 and not r.llamadas and salida.strip() and not os.path.exists(os.path.join(casa, 'Library', 'LaunchAgents', 'navis-raid.plist')),
                   'otro sistema: error claro, nada escrito ni ejecutado (%s)' % salida.strip()[:60])
+        # E8f-A · Windows de verdad (`platform.system()`, sin sustituir servicio.sistema): instalar, quitar y estado dicen
+        # «no soportado», salen con código distinto de 0 (estado, que solo informa, con 0) y no ejecutan ni escriben nada
+        servicio.sistema = sistema_real
+        real_system, platform.system = platform.system, lambda: 'Windows'
+        try:
+            for nombre, args in (('--instalar-servicio', (servicio.instalar, 8765, codigo_1)), ('--quitar-servicio', (servicio.quitar,))):
+                r = Runner()
+                codigo, salida = captura(*args, runner=r)
+                comprobar(codigo not in (0, None) and not r.llamadas and 'Windows' in salida,
+                          'Windows: %s dice que no está soportado, sale con %s y no ejecuta nada (%s)' % (nombre, codigo, salida.strip()[:50]))
+            codigo, salida = captura(servicio.estado)
+            comprobar(codigo == 0 and 'Windows' in salida, 'Windows: --estado-servicio informa que no está soportado y sale con 0')
+        finally:
+            platform.system = real_system
         servicio.sistema = lambda: 'Darwin'
         r = Runner(lanza=PermissionError(1, 'Operation not permitted'))
         codigo, salida = captura(servicio.instalar, 8765, codigo_1, runner=r)
@@ -272,7 +289,7 @@ def en_doctor(tmp, comprobar):
         return ruta
 
     def doctor():
-        r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, env=base, cwd=copia, timeout=180)
+        r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, encoding='utf-8', errors='replace', env=base, cwd=copia, timeout=180)
         return r.stdout
 
     salida = doctor()
@@ -545,14 +562,14 @@ def en_doctor_e8e2a(servicio, tmp, comprobar):
     aviso = servicio.aviso_puerto_ocupado(puerto)
     with open(os.path.join(datos, 'servicio.log'), 'w', encoding='utf-8') as fh:
         fh.write(aviso + '\n')
-    r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, env=base, cwd=copia, timeout=180)
+    r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, encoding='utf-8', errors='replace', env=base, cwd=copia, timeout=180)
     lineas = [l for l in r.stdout.splitlines() if py_muerto in l]
     comprobar(bool(lineas) and lineas[0].startswith('✗') and '/navis-raid:start' in lineas[0],
               'S6 --doctor marca como fallo un servicio cuyo intérprete guardado ya no existe y dice cómo arreglarlo (%s)' % (lineas[0][:90] if lineas else 'sin línea'))
     comprobar(not any(l.startswith('✓') and 'Servicio:' in l for l in r.stdout.splitlines()),
               'S6 --doctor no da por bueno ese servicio')
     comprobar(aviso in r.stdout, 'S5 --doctor muestra el aviso de puerto ocupado de servicio.log cuando nada escucha')
-    e = subprocess.run([sys.executable, 'oficina.py', '--estado-servicio'], capture_output=True, text=True, env=base, cwd=copia, timeout=60)
+    e = subprocess.run([sys.executable, 'oficina.py', '--estado-servicio'], capture_output=True, text=True, encoding='utf-8', errors='replace', env=base, cwd=copia, timeout=60)
     comprobar(aviso in e.stdout, 'S5 oficina.py --estado-servicio (subproceso) muestra ese aviso')
 
 

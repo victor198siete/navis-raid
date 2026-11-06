@@ -6,8 +6,8 @@ YT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 # Only change from the original: the two CSVs of the original project are optional here (this folder does not ship them).
 # Everything that `sprites.py` uses (SKIN, HAIR, Lienzo, pelo_*, heroe_chibi) does not need them.
 try:
-    P = {r["id"].zfill(2): r for r in csv.DictReader(open(f"{YT}/ideas/angular-quest/personas.csv"))}
-    CAST = {r["id"]: r for r in csv.DictReader(open(f"{YT}/visionarios/roster.csv"))}
+    P = {r["id"].zfill(2): r for r in csv.DictReader(open(f"{YT}/ideas/angular-quest/personas.csv", encoding='utf-8'))}
+    CAST = {r["id"]: r for r in csv.DictReader(open(f"{YT}/visionarios/roster.csv", encoding='utf-8'))}
 except OSError:
     P, CAST = {}, {}
 VOTO_COL = {"RESCATE": "#ffcf4a", "SAAS": "#5fd068", "JUEGO": "#3ee6e0", "SIN_TECLADO": "#b48cff", "CLON": "#ef5350"}
@@ -149,8 +149,8 @@ if __name__ == "__main__":   # exporta los SVG de los 50: retrato y chibi en cad
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "svg")
     os.makedirs(out, exist_ok=True)
     for nid in sorted(CAST):
-        open(f"{out}/{nid}-retrato.svg", "w").write(retrato(nid))
-        for g in GESTOS: open(f"{out}/{nid}-chibi-{g}.svg", "w").write(chibi(nid, g))
+        open(f"{out}/{nid}-retrato.svg", "w", encoding='utf-8').write(retrato(nid))
+        for g in GESTOS: open(f"{out}/{nid}-chibi-{g}.svg", "w", encoding='utf-8').write(chibi(nid, g))
     print("ok", len(os.listdir(out)), "svg")
 
 def heroe_chibi(gesto="feliz", microfono=True):

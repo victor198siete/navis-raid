@@ -66,7 +66,7 @@ print(json.dumps({
 
 def correr(ruta_config, *args):
     env = dict(os.environ, NAVIS_RAID_CONFIG=ruta_config)
-    return subprocess.run([sys.executable, *args], capture_output=True, text=True, env=env, timeout=180)
+    return subprocess.run([sys.executable, *args], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, timeout=180)
 
 
 def datos(ruta_config):
@@ -244,7 +244,7 @@ def main():
         with open(archivo, 'w', encoding='utf-8') as fh:
             fh.write(js)
         try:
-            p = subprocess.run(['node', '--check', archivo], capture_output=True, text=True, timeout=60)
+            p = subprocess.run(['node', '--check', archivo], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
             comprobar(p.returncode == 0, f'node --check del JS generado en {idioma} ({p.stderr.strip()[:200]})')
         except (OSError, subprocess.TimeoutExpired) as e:
             comprobar(False, f'node --check del JS generado en {idioma} ({e})')
@@ -280,7 +280,7 @@ def main():
         textos_i = res.get(idioma, {}).get('textos_pagina') or {}
         prog = 'let D = {textos: %s};\n%s\nconsole.log(JSON.stringify([dur(10), dur(300), dur(10800), dur(172800)]));' % (json.dumps(textos_i), funcs)
         try:
-            p = subprocess.run(['node', '-e', prog], capture_output=True, text=True, timeout=60)
+            p = subprocess.run(['node', '-e', prog], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=60)
             salida = json.loads(p.stdout) if p.returncode == 0 else p.stderr.strip()[-200:]
         except (OSError, subprocess.TimeoutExpired, ValueError) as e:
             salida = str(e)

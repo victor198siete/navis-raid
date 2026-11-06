@@ -74,11 +74,14 @@ ESCALA = 2                # píxeles de pantalla por pixel del dibujo (--compact
 
 # El chat: la oficina habla con una sola sesión, la central, por su bandeja de entrada (socket de
 # mensajería entre sesiones de Claude Code). Cada mensaje es un turno de esa sesión: ahí sí hay tokens.
-CHAT_SESION = config.valor('chat_sesion')                     # título de la sesión en la app; None: sin chat
+CHAT_CONFIGURADO = config.valor('chat_sesion')                # lo que dice el config.json (para --doctor)
+CHAT_SESION = None if sys.platform == 'win32' else CHAT_CONFIGURADO   # título de la sesión en la app; None: sin chat (en Windows no hay bandejas de Unix ni lsof)
 CHAT_DIR = os.path.join(DATOS, 'chat')
 CHAT_HILO = os.path.join(CHAT_DIR, 'hilo.jsonl')               # una línea por mensaje: cuando, de, texto
 CHAT_MAX = 200                                                 # mensajes que se conservan en memoria
-SOCKETS = ['/tmp/cc-socks', f'/tmp/cc-socks-{os.getuid()}', '/private/tmp/cc-socks']   # bandejas (<pid>.sock)
+SOCKETS = ['/tmp/cc-socks', '/private/tmp/cc-socks']              # bandejas (<pid>.sock)
+if hasattr(os, 'getuid'):                                            # Windows no tiene getuid (ni bandejas): no se evalúa al importar
+    SOCKETS.insert(1, f'/tmp/cc-socks-{os.getuid()}')
 PISOS = os.path.join(DATOS, 'pisos.json')                       # respaldo de los pisos cuando no hay grupos en el sidebar
 LOBBY = tuple(config.valor('lobby'))                           # sesiones que van al lobby aunque tengan grupo
 AZOTEA = {'nombre': t('Azotea · ocio'), 'proyectos': [], 'azotea': True}     # el último piso: los especialistas sin encargo (P2)
@@ -179,7 +182,7 @@ def modelo_esperado(agente, cwd, cache={}):
         if cache.get(ruta, (None,))[0] != mt:
             modelo = ''
             try:
-                with open(ruta) as fh:
+                with open(ruta, encoding='utf-8') as fh:
                     lineas = fh.read(4000).split('\n')
                 if lineas and lineas[0].strip() == '---':
                     for l in lineas[1:]:
@@ -215,7 +218,7 @@ def archivos_app(alcances=None):
         if alcances is not None and '/'.join(f.split('/')[-3:-1]) not in alcances:
             continue
         try:
-            d = json.load(open(f))
+            d = json.load(open(f, encoding='utf-8'))
         except (ValueError, OSError):
             continue
         if isinstance(d, dict) and not d.get('isArchived'):
@@ -229,7 +232,7 @@ def tareas_programadas():
         return out
     for f in sorted(glob.glob(APP + '/*/*/scheduled-tasks.json')):
         try:
-            lista = json.load(open(f)).get('scheduledTasks') or []
+            lista = json.load(open(f, encoding='utf-8')).get('scheduledTasks') or []
         except (ValueError, OSError, AttributeError):
             continue
         for x in lista:
@@ -471,7 +474,7 @@ def subagentes(ruta_principal):
     out = []
     for meta in glob.glob(carpeta + '/agent-*.meta.json'):
         try:
-            md = _dict(json.load(open(meta)))     # un meta.json que no es un objeto cuenta como vacío
+            md = _dict(json.load(open(meta, encoding='utf-8')))     # un meta.json que no es un objeto cuenta como vacío
         except (ValueError, OSError):
             continue
         jl = meta[:-10] + '.jsonl'
@@ -624,7 +627,7 @@ def grupos_app():
     if not usa_app():
         return None
     try:
-        with open(APP_CONFIG) as fh:
+        with open(APP_CONFIG, encoding='utf-8') as fh:
             prefs = json.load(fh)['preferences']['epitaxyPrefs']
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -676,7 +679,7 @@ def cargar_pisos():
         pisos, pb = etiquetar(abajo + [{'nombre': t('Lobby'), 'grupo': None, 'lobby': True}] + arriba + [dict(AZOTEA)])
         return pisos, pb, asignados, None
     try:
-        with open(PISOS) as fh:
+        with open(PISOS, encoding='utf-8') as fh:
             lista = json.load(fh)['pisos']
         pisos = [{'nombre': str(p.get('nombre') or (t('Piso {n}', n=i) if i else t('Planta baja'))),
                   'proyectos': [str(x) for x in (p.get('proyectos') or [])], 'lobby': i == 0} for i, p in enumerate(lista)]
@@ -763,7 +766,7 @@ def llamadas_por_dia(dias=GYM_DIAS):
         dia = (hoy - dt.timedelta(days=n)).isoformat()
         cuenta = {}
         try:
-            with open(os.path.join(bitacora.DIR, dia + '.jsonl')) as fh:
+            with open(os.path.join(bitacora.DIR, dia + '.jsonl'), encoding='utf-8') as fh:
                 for linea in fh:
                     try:
                         a = json.loads(linea).get('agente')
@@ -829,7 +832,7 @@ def chat_hilo():
     """El hilo del chat, del más antiguo al más nuevo: [{cuando (datetime), de, texto}]."""
     out = []
     try:
-        with open(CHAT_HILO) as fh:
+        with open(CHAT_HILO, encoding='utf-8') as fh:
             for linea in fh:
                 try:
                     d = json.loads(linea)
@@ -846,7 +849,7 @@ def chat_hilo():
 
 def chat_anotar(de, texto):
     os.makedirs(CHAT_DIR, exist_ok=True)
-    with open(CHAT_HILO, 'a') as fh:
+    with open(CHAT_HILO, 'a', encoding='utf-8') as fh:
         fh.write(json.dumps({'cuando': ahora().isoformat(), 'de': de, 'texto': texto}, ensure_ascii=False) + '\n')
 
 
@@ -871,7 +874,7 @@ def sockets_en(cwd):
         try:
             pid = int(os.path.basename(p).split('.')[0])
             out = subprocess.run(['lsof', '-a', '-p', str(pid), '-d', 'cwd', '-Fn'],
-                                 capture_output=True, text=True, timeout=5).stdout
+                                 capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5).stdout
         except (ValueError, OSError, subprocess.SubprocessError):
             return todos
         if any(l[1:] == cwd for l in out.splitlines() if l.startswith('n')):
@@ -1652,7 +1655,7 @@ def _escribir(nombre, contenido):
     os.makedirs(DATOS, exist_ok=True)         # la carpeta de datos se crea al escribir
     ruta = os.path.join(DATOS, nombre)
     tmp = f'{ruta}.{os.getpid()}.{threading.get_ident()}.tmp'   # por hilo: dos peticiones a la vez no comparten temporal
-    with open(tmp, 'w') as fh:
+    with open(tmp, 'w', encoding='utf-8') as fh:
         fh.write(contenido)
     os.replace(tmp, ruta)
 
@@ -1814,7 +1817,7 @@ def doctor():
         buenos = rotos = 0
         for f in glob.glob(APP + '/*/*/local_*.json'):
             try:
-                with open(f) as fh:
+                with open(f, encoding='utf-8') as fh:
                     ok = isinstance(json.load(fh), dict)
             except (ValueError, OSError):
                 ok = False
@@ -1871,6 +1874,12 @@ def doctor():
         aviso = servicio.aviso_pendiente(sv)
         if aviso:
             linea('aviso', t('Servicio: nada escucha y servicio.log termina con este aviso: {aviso}', aviso=aviso))
+
+    # 9. Windows: se arranca a mano, sin servicio y sin chat (E8f-A)
+    if sys.platform == 'win32':
+        linea('aviso', t('Windows: sin servicio en segundo plano (se arranca a mano con `python oficina.py --serve`) y sin chat.'))
+        if CHAT_CONFIGURADO:
+            linea('aviso', t('Chat: no disponible en Windows'))
 
     sin_lectura = not os.path.isdir(PROYECTOS) or legibles == 0
     print('\n' + t('{ok} bien, {aviso} avisos, {mal} fallas', **cuenta) + (t(' · no hay nada legible: la oficina saldría vacía.') if sin_lectura else '.'))
@@ -2032,6 +2041,12 @@ def servidor(puerto, token):
 
 def main(argv):
     global ESCALA, SOLO_TERMINAL
+    if sys.platform == 'win32':          # la consola o el log de Windows usan cp1252 por defecto: ✓ ⚠ ● y los acentos de los títulos no caben
+        for flujo in (sys.stdout, sys.stderr):
+            try:
+                flujo.reconfigure(encoding='utf-8', errors='replace')
+            except (AttributeError, ValueError, OSError):
+                pass
     if '--solo-terminal' in argv:
         SOLO_TERMINAL = True
         bitacora.SOLO_TERMINAL, bitacora.APP = True, None     # la bitácora tampoco mira la app

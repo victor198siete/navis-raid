@@ -1,7 +1,7 @@
 {
   "name": "navis-raid",
   "displayName": "Navis Raid",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "A local pixel-art dashboard of your Claude Code sessions, with no tokens and no network.",
   "author": {"name": "Victor Moreno"},
   "homepage": "https://github.com/victor198siete/navis-raid",

@@ -55,7 +55,7 @@ def claude_falso(raiz):
           message={'role': 'assistant', 'model': 'claude-sonnet-5-5', 'id': 'm1', 'stop_reason': 'end_turn', 'usage': uso,
                    'content': [{'type': 'text', 'text': 'listo'}]}, **comun),
     ]
-    with open(os.path.join(carpeta, 'dddddddd-0000-4000-8000-000000000004.jsonl'), 'w') as fh:
+    with open(os.path.join(carpeta, 'dddddddd-0000-4000-8000-000000000004.jsonl'), 'w', encoding='utf-8') as fh:
         fh.write('\n'.join(lineas) + '\n')
 
 
@@ -92,7 +92,7 @@ def main():
 
         # 1-3 · una pasada con la variable
         antes = instantanea(copia)
-        p = subprocess.run([sys.executable, 'oficina.py'], capture_output=True, text=True, env=env, cwd=copia, timeout=180)
+        p = subprocess.run([sys.executable, 'oficina.py'], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, cwd=copia, timeout=180)
         comprobar(p.returncode == 0, 'oficina.py genera una vez con NAVIS_RAID_DATA' +
                   ('' if p.returncode == 0 else f' (salió con {p.returncode}: {p.stderr.strip()[-300:]})'))
         for nombre in ('index.html', 'tabla.html', 'estado.json', 'bitacora'):
@@ -116,7 +116,7 @@ def main():
 
         # 4 · sin variable, vacía, con «~»
         antes = instantanea(copia)
-        r = subprocess.run([sys.executable, '-c', MUESTRA], capture_output=True, text=True, env=base, cwd=copia, timeout=120)
+        r = subprocess.run([sys.executable, '-c', MUESTRA], capture_output=True, text=True, encoding='utf-8', errors='replace', env=base, cwd=copia, timeout=120)
         if r.returncode != 0:
             comprobar(False, f'importar config, bitacora y oficina sin la variable ({r.stderr.strip()[-300:]})')
         else:
@@ -128,10 +128,10 @@ def main():
             comprobar(m['ruta'] == os.path.join(m['aqui'], 'config.json'), 'sin la variable, config.RUTA es AQUI/config.json')
             comprobar("url('fuentes/press-start-2p-latin-400-normal.woff2')" in m['pixel'] and "url('file://" not in m['pixel'],
                       'sin la variable, la página lleva fuentes/ relativo (idéntica a la de siempre)')
-        r = subprocess.run([sys.executable, '-c', MUESTRA], capture_output=True, text=True, env=dict(base, NAVIS_RAID_DATA='  '), cwd=copia, timeout=120)
+        r = subprocess.run([sys.executable, '-c', MUESTRA], capture_output=True, text=True, encoding='utf-8', errors='replace', env=dict(base, NAVIS_RAID_DATA='  '), cwd=copia, timeout=120)
         m = json.loads(r.stdout.splitlines()[-1]) if r.returncode == 0 else {}
         comprobar(m.get('datos') == m.get('aqui') and bool(m), 'con la variable vacía, config.DATOS es AQUI')
-        r = subprocess.run([sys.executable, '-c', MUESTRA], capture_output=True, text=True, env=dict(base, NAVIS_RAID_DATA='~/mis-datos'), cwd=copia, timeout=120)
+        r = subprocess.run([sys.executable, '-c', MUESTRA], capture_output=True, text=True, encoding='utf-8', errors='replace', env=dict(base, NAVIS_RAID_DATA='~/mis-datos'), cwd=copia, timeout=120)
         m = json.loads(r.stdout.splitlines()[-1]) if r.returncode == 0 else {}
         esperado = os.path.join(tmp, 'mis-datos')
         comprobar(bool(m) and os.path.realpath(m['datos']) == os.path.realpath(esperado) and m['bitacora'] == os.path.join(m['datos'], 'bitacora')
@@ -141,17 +141,17 @@ def main():
         comprobar(antes == despues and not os.path.exists(esperado), 'esas comprobaciones no generaron nada')
 
         # 5 · --doctor
-        r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, env=env, cwd=copia, timeout=180)
+        r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, cwd=copia, timeout=180)
         linea = next((l for l in r.stdout.splitlines() if 'NAVIS_RAID_DATA' in l), '')
         comprobar(datos in linea and linea.startswith('✓'), f'--doctor dice la carpeta de datos y que viene de NAVIS_RAID_DATA ({linea.strip()[:100]})')
-        r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, env=base, cwd=copia, timeout=180)
+        r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, encoding='utf-8', errors='replace', env=base, cwd=copia, timeout=180)
         linea = next((l for l in r.stdout.splitlines() if 'NAVIS_RAID_DATA' in l), '')
         comprobar(os.path.realpath(copia) in os.path.realpath(linea.replace('✓ ', '')) or str(copia) in linea,
                   f'--doctor sin la variable dice que la carpeta de datos es la del código ({linea.strip()[:100]})')
         if hasattr(os, 'geteuid') and os.geteuid() != 0:
             cerrada = os.path.join(tmp, 'cerrada')
             os.mkdir(cerrada, 0o500)
-            r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True,
+            r = subprocess.run([sys.executable, 'oficina.py', '--doctor'], capture_output=True, text=True, encoding='utf-8', errors='replace',
                                env=dict(base, NAVIS_RAID_DATA=os.path.join(cerrada, 'datos')), cwd=copia, timeout=180)
             malas = [l for l in r.stdout.splitlines() if l.startswith('✗') and cerrada in l]
             comprobar(bool(malas), 'si la carpeta de datos no se puede escribir, --doctor lo marca como fallo')

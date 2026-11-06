@@ -194,6 +194,9 @@ EN = {
     'No se pudo parar el servicio; el archivo {ruta} sigue ahí.': 'Could not stop the service; the file {ruta} is still there.',
     'No se pudo borrar {ruta}: {motivo}': 'Could not delete {ruta}: {motivo}',
     'Servicio quitado: {ruta}': 'Service removed: {ruta}',
+    'Windows: sin servicio en segundo plano (se arranca a mano con `python oficina.py --serve`) y sin chat.':
+        'Windows: no background service (start it by hand with `python oficina.py --serve`) and no chat.',
+    'Chat: no disponible en Windows': 'Chat: not available on Windows',
     'Servicio: no instalado (se esperaría en {ruta}).': 'Service: not installed (it would be at {ruta}).',
     'Servicio: instalado en {ruta}': 'Service: installed at {ruta}',
     '  oficina.py: {ruta} ({existe})': '  oficina.py: {ruta} ({existe})',

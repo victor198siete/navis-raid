@@ -47,7 +47,7 @@ def main():
     try:
         shutil.copytree(AQUI, copia, ignore=EXCLUIR)
         env = dict(os.environ, NAVIS_RAID_CONFIG=os.path.join(tmp, 'no-existe.json'), CLAUDE_CONFIG_DIR=os.path.join(tmp, 'claude'))
-        p = subprocess.run([sys.executable, '-c', CODIGO], capture_output=True, text=True, env=env, cwd=copia, timeout=120)
+        p = subprocess.run([sys.executable, '-c', CODIGO], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, cwd=copia, timeout=120)
         if p.returncode != 0:
             ultima = p.stderr.strip().splitlines()[-1] if p.stderr.strip() else f'salió con {p.returncode}'
             comprobar(False, f'la copia importa sprites y arma la página sin error ({ultima})')
@@ -72,7 +72,7 @@ def main():
         sin_afk = os.path.join(tmp, 'oficina-sin-afk')
         shutil.copytree(AQUI, sin_afk, ignore=shutil.ignore_patterns(*EXCLUIR_NOMBRES, 'afk.py'))
         comprobar(not os.path.exists(os.path.join(sin_afk, 'afk.py')), 'la segunda copia no lleva afk.py')
-        p = subprocess.run([sys.executable, '-c', CODIGO], capture_output=True, text=True, env=env, cwd=sin_afk, timeout=120)
+        p = subprocess.run([sys.executable, '-c', CODIGO], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, cwd=sin_afk, timeout=120)
         if p.returncode != 0:
             ultima = p.stderr.strip().splitlines()[-1] if p.stderr.strip() else f'salió con {p.returncode}'
             comprobar(False, f'sin afk.py, la copia importa oficina y arma la página sin error ({ultima})')

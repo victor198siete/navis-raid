@@ -246,7 +246,7 @@ def leer():
 
 def correr(args):
     """El runner por defecto: una orden como lista de argumentos, sin shell. Devuelve el resultado de subprocess.run."""
-    return subprocess.run(list(args), capture_output=True, text=True, timeout=TIEMPO_ORDEN_S)
+    return subprocess.run(list(args), capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=TIEMPO_ORDEN_S)
 
 
 class _Fallo(Exception):

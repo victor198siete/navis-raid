@@ -618,7 +618,7 @@ def main(argv):
     else:
         svg = render_piso(sesiones, simbolo)
         nota = f"{len(sesiones)} sesiones, más la sala y la cocina."
-    open('_preview-iso.html', 'w').write(PAGINA.replace('%LANG%', textos.idioma()).replace('%SIMBOLOS%', ''.join(simbolos.values())).replace('%SVG%', svg).replace('%NOTA%', html.escape(nota)))
+    open('_preview-iso.html', 'w', encoding='utf-8').write(PAGINA.replace('%LANG%', textos.idioma()).replace('%SIMBOLOS%', ''.join(simbolos.values())).replace('%SVG%', svg).replace('%NOTA%', html.escape(nota)))
     print('ok →', '_preview-iso.html', nota)
 
 

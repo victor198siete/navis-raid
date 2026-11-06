@@ -34,7 +34,7 @@ def productos():
     if not PRODUCTOS:
         return out
     try:
-        with open(PRODUCTOS) as fh:
+        with open(PRODUCTOS, encoding='utf-8') as fh:
             for linea in fh:
                 if linea.startswith('#') or not linea.strip():
                     continue
@@ -102,7 +102,7 @@ def siguiente(texto):
 
 def _titulo_nota(ruta):
     try:
-        with open(ruta) as fh:
+        with open(ruta, encoding='utf-8') as fh:
             for l in fh:
                 if l.startswith('# '):
                     return l[2:].strip()[:100]
@@ -120,7 +120,7 @@ def _md(carpeta):
 
 def _correr(repo, *args):
     try:
-        r = subprocess.run(['git', '--no-optional-locks', '-C', repo, *args], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(['git', '--no-optional-locks', '-C', repo, *args], capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=5)
         return r.stdout if r.returncode == 0 else None
     except (OSError, subprocess.SubprocessError):
         return None
@@ -197,7 +197,7 @@ def _producto(prod):
     carpeta = os.path.join(PLANNING, prod)
     ruta = os.path.join(carpeta, 'ROADMAP.md')
     try:
-        with open(ruta) as fh:
+        with open(ruta, encoding='utf-8') as fh:
             texto = fh.read()
         roadmap_ts = int(os.path.getmtime(ruta))
     except OSError:

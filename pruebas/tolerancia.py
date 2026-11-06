@@ -85,13 +85,13 @@ def armar(raiz):
     escribir(os.path.join(carpeta, ROTA + '.jsonl'), rota)
     open(os.path.join(carpeta, VACIA + '.jsonl'), 'wb').close()
     # subagente 1: meta.json es una lista; su transcripción empieza con una lista
-    open(os.path.join(sub, 'agent-uno.meta.json'), 'w').write('[]')
+    open(os.path.join(sub, 'agent-uno.meta.json'), 'w', encoding='utf-8').write('[]')
     escribir(os.path.join(sub, 'agent-uno.jsonl'), [b'[1]', base('assistant', t(40), message={'role': 'assistant', 'content': 'x'})])
     # subagente 2: meta.json es una cadena JSON; mensajes con forma rara
-    open(os.path.join(sub, 'agent-dos.meta.json'), 'w').write('"hola"')
+    open(os.path.join(sub, 'agent-dos.meta.json'), 'w', encoding='utf-8').write('"hola"')
     escribir(os.path.join(sub, 'agent-dos.jsonl'), [base('assistant', t(30), message={'role': 'assistant', 'content': [None, 'x', {'type': 'tool_use', 'name': 'Bash', 'input': 'x'}]})])
     # subagente 3: meta.json bueno, con campos que no son texto
-    open(os.path.join(sub, 'agent-tres.meta.json'), 'w').write(json.dumps({'agentType': ['x'], 'description': None, 'model': 5}))
+    open(os.path.join(sub, 'agent-tres.meta.json'), 'w', encoding='utf-8').write(json.dumps({'agentType': ['x'], 'description': None, 'model': 5}))
     escribir(os.path.join(sub, 'agent-tres.jsonl'), [base('user', t(20), message={'role': 'user', 'content': 'x'})])
     return [(os.path.join(carpeta, BUENA + '.jsonl'), False), (os.path.join(carpeta, ROTA + '.jsonl'), False),
             (os.path.join(carpeta, VACIA + '.jsonl'), False)] + \
@@ -124,7 +124,7 @@ print(json.dumps(fallos))
 
 
 def correr(codigo, env, *args):
-    return subprocess.run([sys.executable, '-c', codigo, *args], env=env, capture_output=True, text=True, timeout=120)
+    return subprocess.run([sys.executable, '-c', codigo, *args], env=env, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
 
 
 def main():
@@ -152,14 +152,14 @@ def main():
             print('bitacora._leer_nuevo:', 'sin excepciones' if not malos else f'{len(malos)} con excepción')
 
         # --doctor: solo si existe (si no, correr oficina.py regeneraría index.html con la configuración falsa)
-        with open(os.path.join(AQUI, 'oficina.py')) as fh:
+        with open(os.path.join(AQUI, 'oficina.py'), encoding='utf-8') as fh:
             hay_doctor = 'def doctor(' in fh.read()
         if not hay_doctor:
             fallos.append('oficina.py no tiene --doctor')
         else:
             vigilados = ('index.html', 'estado.json', os.path.join('bitacora', '.offsets.json'))   # --doctor no debe tocarlos
             previo = {f: os.path.getmtime(os.path.join(AQUI, f)) for f in vigilados if os.path.exists(os.path.join(AQUI, f))}
-            r = subprocess.run([sys.executable, os.path.join(AQUI, 'oficina.py'), '--doctor'], env=env, capture_output=True, text=True, timeout=120)
+            r = subprocess.run([sys.executable, os.path.join(AQUI, 'oficina.py'), '--doctor'], env=env, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
             if 'Traceback' in r.stderr:
                 fallos.append('--doctor lanzó una excepción: ' + r.stderr.strip().splitlines()[-1])
             if r.returncode != 0:

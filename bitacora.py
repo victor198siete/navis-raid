@@ -130,7 +130,7 @@ def corte():
 
 def leer_cuota():
     try:
-        with open(CUOTA) as fh:
+        with open(CUOTA, encoding='utf-8') as fh:
             for raw in fh:
                 try:
                     yield json.loads(raw)
@@ -148,7 +148,7 @@ def leer(desde=None, hasta=None):
             continue
         if hasta and dia > (hasta.astimezone() + dt.timedelta(days=1)).date():
             continue
-        with open(f) as fh:
+        with open(f, encoding='utf-8') as fh:
             for raw in fh:
                 try:
                     e = json.loads(raw)
@@ -171,7 +171,7 @@ def titulos():
         mapa = {}
         for f in glob.glob(APP + '/*/*/local_*.json') if APP else []:
             try:
-                d = json.load(open(f))
+                d = json.load(open(f, encoding='utf-8'))
             except (ValueError, OSError):
                 continue
             if isinstance(d, dict) and isinstance(d.get('cliSessionId'), str) and d['cliSessionId']:
@@ -191,7 +191,7 @@ def transcripciones():
 
 def _tipo(ruta):
     try:
-        return _txt(_dict(json.load(open(ruta[:-6] + '.meta.json'))).get('agentType')) or '?'
+        return _txt(_dict(json.load(open(ruta[:-6] + '.meta.json', encoding='utf-8'))).get('agentType')) or '?'
     except (ValueError, OSError):
         return '?'
 
@@ -260,7 +260,7 @@ def _identidades(archivo):
     """Las identidades de lo ya anotado en el archivo de un día (vacío si no existe)."""
     ya = set()
     try:
-        with open(archivo) as fh:
+        with open(archivo, encoding='utf-8') as fh:
             for raw in fh:
                 try:
                     e = json.loads(raw)
@@ -283,7 +283,7 @@ def _podar(limite):
     vigentes = [l for l in lecturas if (_ts(l.get('hora')) or limite) >= limite]
     if len(vigentes) < len(lecturas):
         tmp = CUOTA + '.tmp'
-        with open(tmp, 'w') as fh:
+        with open(tmp, 'w', encoding='utf-8') as fh:
             fh.writelines(json.dumps(l, ensure_ascii=False) + '\n' for l in vigentes)
         os.replace(tmp, CUOTA)
 
@@ -294,7 +294,7 @@ def actualizar(reconstruir=False):
     os.makedirs(DIR, exist_ok=True)
     if not reconstruir and not os.path.exists(OFFSETS):
         return None
-    with open(os.path.join(DIR, '.lock'), 'w') as candado:
+    with open(os.path.join(DIR, '.lock'), 'w', encoding='utf-8') as candado:
         try:
             if fcntl:
                 fcntl.flock(candado, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -307,7 +307,7 @@ def actualizar(reconstruir=False):
             estado = {}
         else:
             try:
-                estado = json.load(open(OFFSETS))
+                estado = json.load(open(OFFSETS, encoding='utf-8'))
             except (ValueError, OSError):
                 estado = {}
         desde = corte()
@@ -350,7 +350,7 @@ def actualizar(reconstruir=False):
             entradas.sort(key=lambda e: e['t'])
             archivo = os.path.join(DIR, dia + '.jsonl')
             ya = _identidades(archivo)
-            with open(archivo, 'a') as fh:
+            with open(archivo, 'a', encoding='utf-8') as fh:
                 for e in entradas:
                     ident = _identidad(e)
                     if ident in ya:               # releída tras perderse el estado: ya está anotada
@@ -359,7 +359,7 @@ def actualizar(reconstruir=False):
                     fh.write(json.dumps(e, ensure_ascii=False) + '\n')
                     nuevas += 1
         tmp = OFFSETS + '.tmp'
-        with open(tmp, 'w') as fh:
+        with open(tmp, 'w', encoding='utf-8') as fh:
             json.dump(estado, fh)
         os.replace(tmp, OFFSETS)
         _podar(desde)
@@ -373,7 +373,7 @@ def deduplicar():
     o None si otro proceso escribe la bitácora o ya hay un respaldo."""
     os.makedirs(DIR, exist_ok=True)
     respaldo = os.path.join(DIR, 'respaldo-dedup')
-    with open(os.path.join(DIR, '.lock'), 'w') as candado:
+    with open(os.path.join(DIR, '.lock'), 'w', encoding='utf-8') as candado:
         try:
             if fcntl:
                 fcntl.flock(candado, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -388,7 +388,7 @@ def deduplicar():
         antes = despues = 0
         for f in archivos:
             elegidas = {}
-            with open(f) as fh:
+            with open(f, encoding='utf-8') as fh:
                 for raw in fh:
                     try:
                         e = json.loads(raw)
@@ -403,7 +403,7 @@ def deduplicar():
             lineas = sorted(elegidas.values(), key=lambda e: _txt(e.get('t')))
             despues += len(lineas)
             tmp = f + '.tmp'
-            with open(tmp, 'w') as fh:
+            with open(tmp, 'w', encoding='utf-8') as fh:
                 fh.writelines(json.dumps(e, ensure_ascii=False) + '\n' for e in lineas)
             os.replace(tmp, f)
         return antes, despues

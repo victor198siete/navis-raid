@@ -45,7 +45,7 @@ def contar():
     for nombre in os.listdir(bitacora.DIR):
         if len(nombre) == 16 and nombre.endswith('.jsonl') and nombre != 'cuota.jsonl':
             vistas = set()
-            for raw in open(os.path.join(bitacora.DIR, nombre)):
+            for raw in open(os.path.join(bitacora.DIR, nombre), encoding='utf-8'):
                 k = json.dumps(json.loads(raw), sort_keys=True)
                 total += 1
                 rep += k in vistas
@@ -88,13 +88,13 @@ def main():
         comprobar(contar() == (30, 0), f'tras una pasada sin transcripciones y otra con ellas no hay repetidas (hay {contar()}, anotó {n})')
 
         # 2 · .offsets.json ilegible
-        with open(bitacora.OFFSETS, 'w') as fh:
+        with open(bitacora.OFFSETS, 'w', encoding='utf-8') as fh:
             fh.write('{"roto": ')
         n = bitacora.actualizar()
         comprobar(contar() == (30, 0), f'con .offsets.json ilegible no hay repetidas (hay {contar()}, anotó {n})')
 
         # 3 · .offsets.json reiniciado a vacío
-        with open(bitacora.OFFSETS, 'w') as fh:
+        with open(bitacora.OFFSETS, 'w', encoding='utf-8') as fh:
             fh.write('{}')
         n = bitacora.actualizar()
         comprobar(contar() == (30, 0), f'con .offsets.json vacío no hay repetidas (hay {contar()}, anotó {n})')
@@ -111,18 +111,18 @@ def main():
         # 5 · --deduplicar limpia lo que ya estaba repetido (con y sin título), hace copia y deja los desplazamientos
         dia = sorted(f for f in os.listdir(bitacora.DIR) if len(f) == 16 and f != 'cuota.jsonl')[0]
         archivo = os.path.join(bitacora.DIR, dia)
-        lineas = open(archivo).read().splitlines()
+        lineas = open(archivo, encoding='utf-8').read().splitlines()
         e0 = json.loads(lineas[0])
         sin, con = dict(e0, titulo=''), dict(e0, titulo='con título', pausa=7)
-        with open(archivo, 'a') as fh:
+        with open(archivo, 'a', encoding='utf-8') as fh:
             fh.write('\n'.join([json.dumps(sin), json.dumps(con), lineas[1]]) + '\n')
-        offsets = open(bitacora.OFFSETS).read()
+        offsets = open(bitacora.OFFSETS, encoding='utf-8').read()
         antes_n = contar()[0]
         r = bitacora.deduplicar()
-        leidas = [json.loads(l) for l in open(archivo)]
+        leidas = [json.loads(l) for l in open(archivo, encoding='utf-8')]
         comprobar(r == (antes_n, antes_n - 3) and contar() == (antes_n - 3, 0), f'--deduplicar quita las 3 repetidas ({r}, hay {contar()})')
         comprobar(any(e['t'] == e0['t'] and e['titulo'] == 'con título' for e in leidas), '--deduplicar conserva la línea que tiene título')
-        comprobar(os.path.isdir(os.path.join(bitacora.DIR, 'respaldo-dedup')) and open(bitacora.OFFSETS).read() == offsets,
+        comprobar(os.path.isdir(os.path.join(bitacora.DIR, 'respaldo-dedup')) and open(bitacora.OFFSETS, encoding='utf-8').read() == offsets,
                   '--deduplicar deja copia en respaldo-dedup/ y no toca .offsets.json')
         comprobar(bitacora.deduplicar() is None, '--deduplicar no se repite si ya hay copia')
 

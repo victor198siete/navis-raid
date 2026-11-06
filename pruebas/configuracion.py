@@ -104,7 +104,7 @@ print(json.dumps({'avisos': config.AVISOS, 'umbral': oficina.UMBRAL_K, 'umbral_i
 
 def correr(ruta_config):
     env = dict(os.environ, NAVIS_RAID_CONFIG=ruta_config)
-    p = subprocess.run([sys.executable, '-c', CODIGO], capture_output=True, text=True, env=env, timeout=120)
+    p = subprocess.run([sys.executable, '-c', CODIGO], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, timeout=120)
     if p.returncode != 0:
         raise RuntimeError(p.stderr.strip().splitlines()[-1] if p.stderr.strip() else f'salió con {p.returncode}')
     return json.loads(p.stdout.splitlines()[-1])
