@@ -16,7 +16,7 @@ Uso:
   python3 oficina.py --watch 5       regenera cada 5 s (Ctrl+C para parar)
   python3 oficina.py --serve 8765    sirve http://localhost:8765/ y regenera en cada carga (no probado desde el sandbox)
   python3 oficina.py --doctor        diagnóstico de solo lectura: qué encontró en este equipo y qué no (también: doctor)
-  python3 oficina.py --instalar-servicio [puerto]   instala Navis Raid como servicio de usuario (launchd o systemd), 8765 por defecto
+  python3 oficina.py --instalar-servicio [puerto]   instala Navis Raid como servicio de usuario (launchd, systemd o la carpeta Inicio de Windows), 8765 por defecto
   python3 oficina.py --quitar-servicio              lo para y borra el archivo del servicio
   python3 oficina.py --estado-servicio              dice si está instalado, a qué oficina.py apunta y si algo escucha
   python3 oficina.py --solo-terminal ignora los archivos de la app (también: NAVIS_RAID_SOLO_TERMINAL=1)
@@ -1875,9 +1875,12 @@ def doctor():
         if aviso:
             linea('aviso', t('Servicio: nada escucha y servicio.log termina con este aviso: {aviso}', aviso=aviso))
 
-    # 9. Windows: se arranca a mano, sin servicio y sin chat (E8f-A)
+    # 9. Windows: servicio en la carpeta Inicio (E8f-B1) o a mano, y sin chat (E8f-A)
     if sys.platform == 'win32':
-        linea('aviso', t('Windows: sin servicio en segundo plano (se arranca a mano con `python oficina.py --serve`) y sin chat.'))
+        if sv['instalado']:
+            linea('aviso', t('Windows: servicio en la carpeta Inicio; no se relanza si se cae (vuelve en el siguiente inicio de sesión o con /navis-raid:start). Sin chat.'))
+        else:
+            linea('aviso', t('Windows: servicio sin instalar (instálalo con /navis-raid:start, o arranca a mano con `python oficina.py --serve`) y sin chat.'))
         if CHAT_CONFIGURADO:
             linea('aviso', t('Chat: no disponible en Windows'))
 
@@ -2041,6 +2044,9 @@ def servidor(puerto, token):
 
 def main(argv):
     global ESCALA, SOLO_TERMINAL
+    if os.environ.get('NAVIS_RAID_SERVICIO') == '1' and (sys.stdout is None or sys.stderr is None):
+        import servicio                  # pythonw.exe (el servicio de Windows) no trae stdout ni stderr: su salida va a servicio.log
+        servicio.reabrir_flujos()
     if sys.platform == 'win32':          # la consola o el log de Windows usan cp1252 por defecto: ✓ ⚠ ● y los acentos de los títulos no caben
         for flujo in (sys.stdout, sys.stderr):
             try:
@@ -2083,7 +2089,18 @@ def main(argv):
             # Como servicio, 0: el KeepAlive/SuccessfulExit de launchd (y Restart=on-failure de systemd) no relanza tras un 0.
             return 0 if os.environ.get(servicio.SERVICIO) == '1' else 3
         print(t('http://localhost:{puerto}/  (Ctrl+C para parar)', puerto=srv.server_address[1]))
-        srv.serve_forever()          # vuelve cuando POST /salida llama a shutdown(): salida limpia, código 0 (el servicio no se relanza)
+        import servicio
+        con_pid = os.environ.get(servicio.SERVICIO) == '1' and (sys.platform == 'win32' or servicio.sistema() == 'Windows')
+        if con_pid:                  # el servicio de Windows se para con taskkill sobre este PID (quitar, reinstalar)
+            try:
+                servicio.escribir_pid(puerto=srv.server_address[1])
+            except OSError:
+                con_pid = False
+        try:
+            srv.serve_forever()      # vuelve cuando POST /salida llama a shutdown(): salida limpia, código 0 (el servicio no se relanza)
+        finally:
+            if con_pid:
+                servicio.borrar_pid()
         srv.server_close()
         return 0
     elif '--watch' in argv:

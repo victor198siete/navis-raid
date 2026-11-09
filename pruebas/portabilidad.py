@@ -16,6 +16,11 @@
      de los `.py` del paquete pasa `encoding='utf-8', errors='replace'` (en Windows cp1252 no define 0x81, 0x8D, 0x8F, 0x90 ni
      0x9D, y UTF-8 los usa en «Á», «Í» y los emojis: el `UnicodeDecodeError` no lo atrapa ningún `except OSError`). Y, de
      forma funcional, `plan._correr` lee un commit «Á 🐛» aunque la codificación del equipo no sea UTF-8 (locale C sin coerción).
+  9. (E8f-B1) El servicio de Windows, simulado (como la 4, con `NAVIS_RAID_SERVICIO=1` y `sys.stdout`/`sys.stderr` en None, que es
+     lo que deja `pythonw.exe`): `oficina.main(['--serve', puerto])` deja su línea en `DATOS/servicio.log`, escribe
+     `servicio.pid` con su PID mientras sirve y lo borra al salir limpio. El servidor HTTP se sustituye por uno falso (la
+     prueba no abre puertos): lo que se comprueba es el log y el PID, no la red. Fuera del servicio (sin la variable) no
+     escribe ni log ni PID.
 
 Todo ocurre en un directorio temporal (la bitácora real vive junto al código y no se toca; se comprueba la fecha de su
 `.offsets.json`). No ejecuta git de verdad: sustituye `subprocess.run`.
@@ -155,6 +160,44 @@ parar()
 print(json.dumps({'codigo': codigo, 'enviados': enviado, 'error': error, 'lsof': [l for l in llamadas if 'lsof' in l],
                   'destino': oficina.chat_destino(), 'sesion': oficina.CHAT_SESION, 'chat': datos['chat'],
                   'pie_menciona': 'salvo lo que hables' in pagina}))
+'''
+
+SIM_SERVICIO = r'''
+import json
+import oficina, servicio
+visto = {}
+
+
+class Falso:
+    server_address = ('127.0.0.1', 8999)
+
+    def serve_forever(self):
+        try:
+            with open(servicio.ruta_pid(), encoding='utf-8') as fh:
+                visto['pid'] = fh.read().strip()
+        except OSError:
+            visto['pid'] = None
+        print('http-falso')
+
+    def server_close(self):
+        pass
+
+
+oficina.servidor = lambda puerto, token: Falso()
+if os.environ.get('PRUEBA_SIN_SERVICIO'):
+    os.environ.pop('NAVIS_RAID_SERVICIO', None)
+else:
+    os.environ['NAVIS_RAID_SERVICIO'] = '1'
+sys.stdout = None                       # lo que deja pythonw.exe
+sys.stderr = None
+codigo = oficina.main(['--serve', '8999'])
+if sys.stdout:
+    sys.stdout.flush()
+log = servicio.ruta_log()
+sys.__stdout__.write(json.dumps({
+    'codigo': codigo, 'pid_visto': visto.get('pid'), 'mi_pid': os.getpid(),
+    'pid_despues': os.path.exists(servicio.ruta_pid()), 'log_existe': os.path.exists(log),
+    'log': open(log, encoding='utf-8').read() if os.path.exists(log) else None}) + '\n')
 '''
 
 SIM_DOCTOR = r'''
@@ -352,6 +395,25 @@ def main():
         minusculas = p.stdout.lower()
         comprobar('windows' in minusculas and '--serve' in minusculas and 'chat' in minusculas,
                   'Windows simulado: --doctor dice que no hay servicio (se arranca con --serve) ni chat')
+
+    # 6b · Windows simulado: como servicio (pythonw, sin stdout) --serve deja log y PID
+    with tempfile.TemporaryDirectory() as raiz:
+        p = simular_windows(SIM_SERVICIO, raiz)
+        if p.returncode != 0:
+            comprobar(False, f'Windows + servicio: el subproceso corre ({ultima_linea(p)})')
+        else:
+            r = json.loads(p.stdout.splitlines()[-1])
+            comprobar(r['codigo'] == 0 and r['log_existe'] and 'http-falso' in (r['log'] or '') and 'localhost:8999' in (r['log'] or ''),
+                      f'Windows + servicio: con stdout None, --serve deja su salida en servicio.log ({r["log"]!r})')
+            comprobar(r['pid_visto'] == '%s 8999' % r['mi_pid'], f'Windows + servicio: servicio.pid lleva el PID del servidor y el puerto en que escucha, «PID PUERTO» ({r["pid_visto"]} frente a {r["mi_pid"]} 8999)')
+            comprobar(r['pid_despues'] is False, 'Windows + servicio: servicio.pid desaparece al salir limpio')
+    with tempfile.TemporaryDirectory() as raiz:
+        p = simular_windows(SIM_SERVICIO, raiz, extra_env={'PRUEBA_SIN_SERVICIO': '1'})
+        if p.returncode != 0:
+            comprobar(False, f'Windows sin servicio: el subproceso corre ({ultima_linea(p)})')
+        else:
+            r = json.loads(p.stdout.splitlines()[-1])
+            comprobar(r['pid_visto'] is None and not r['log_existe'], f'Windows a mano (sin NAVIS_RAID_SERVICIO): no escribe PID ni log ({r["pid_visto"]}, {r["log_existe"]})')
 
     # 7 · UTF-8 explícito
     malos = sin_encoding(AQUI)

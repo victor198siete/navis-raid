@@ -18,8 +18,13 @@ llamadas (y, por si acaso, hace explotar `subprocess.run` mientras corre). Compr
   8. (E8e-4) con el puerto ocupado por otra cosa `instalar` no instala (código 4, nada escrito, ningún runner) y sugiere
      el primer puerto libre; si lo ocupa nuestro propio servicio, es una reinstalación y sigue. Con `verificar=True`
      (lo que pasa `oficina.py --instalar-servicio`) espera a que el servicio escuche y, si no llega, sale con 5.
-  9. (E8f-A) con `platform.system() == 'Windows'` instalar y quitar responden «no soportado», con código distinto de 0 y sin
-     ejecutar ni escribir nada; `--estado-servicio` informa lo mismo y sale con 0.
+  9. (E8f-A, reescrito en la E8f-B1) un sistema desconocido sigue dando «no soportado» (código 2, nada escrito ni ejecutado);
+     `--estado-servicio` informa lo mismo y sale con 0. Windows ya está soportado (punto 10).
+ 10. (E8f-B1) Windows simulado (`platform.system() == 'Windows'`, HOME temporal, `runner` y `lanzar` falsos): `instalar`
+     escribe `navis-raid.cmd` en la carpeta Inicio y arranca el servidor con `lanzar`; `texto_cmd`/`leer_cmd` hacen
+     ida y vuelta y rechazan `%`, `"` y saltos de línea (código 2, nada escrito); `quitar` lee `servicio.pid`, comprueba
+     con `tasklist` que es python antes de `taskkill`, y no miente si `taskkill` falla; `estado` describe el `.cmd`;
+     macOS y Linux no cambian (plist y unit idénticos a los de antes, byte a byte, se comprueban aparte con `cmp`).
 
 Uso: python3 pruebas/servicio.py
 """
@@ -93,6 +98,7 @@ def main():
             en_proceso_e8e2a(servicio, tmp, comprobar)
             en_proceso_e8e4(servicio, tmp, comprobar)
             en_verificar_e8e4(servicio, tmp, comprobar)
+            en_windows_e8fb(servicio, tmp, comprobar)
         en_doctor(tmp, comprobar)
         if servicio:
             en_doctor_e8e2a(servicio, tmp, comprobar)
@@ -213,23 +219,23 @@ def en_proceso(servicio, tmp, comprobar):
         comprobar(codigo == 0 and not r4.llamadas, 'Linux: quitar sin servicio sale con 0 y no llama a nada')
 
         # 5 · otro sistema y fallos de permisos
-        servicio.sistema = lambda: 'Windows'
+        servicio.sistema = lambda: 'Plan9'
         r = Runner()
         codigo, salida = captura(servicio.instalar, 8765, codigo_1, runner=r)
-        comprobar(codigo != 0 and not r.llamadas and salida.strip() and not os.path.exists(os.path.join(casa, 'Library', 'LaunchAgents', 'navis-raid.plist')),
-                  'otro sistema: error claro, nada escrito ni ejecutado (%s)' % salida.strip()[:60])
-        # E8f-A · Windows de verdad (`platform.system()`, sin sustituir servicio.sistema): instalar, quitar y estado dicen
-        # «no soportado», salen con código distinto de 0 (estado, que solo informa, con 0) y no ejecutan ni escriben nada
+        comprobar(codigo == 2 and not r.llamadas and salida.strip() and not os.path.exists(os.path.join(casa, 'Library', 'LaunchAgents', 'navis-raid.plist')),
+                  'otro sistema: error claro, código 2, nada escrito ni ejecutado (%s)' % salida.strip()[:60])
+        # E8f-A, reescrito en la E8f-B1: un sistema desconocido (`platform.system()`, sin sustituir servicio.sistema) sigue
+        # dando «no soportado» en instalar, quitar y estado; Windows ya no (lo cubre `en_windows_e8fb`)
         servicio.sistema = sistema_real
-        real_system, platform.system = platform.system, lambda: 'Windows'
+        real_system, platform.system = platform.system, lambda: 'Plan9'
         try:
             for nombre, args in (('--instalar-servicio', (servicio.instalar, 8765, codigo_1)), ('--quitar-servicio', (servicio.quitar,))):
                 r = Runner()
                 codigo, salida = captura(*args, runner=r)
-                comprobar(codigo not in (0, None) and not r.llamadas and 'Windows' in salida,
-                          'Windows: %s dice que no está soportado, sale con %s y no ejecuta nada (%s)' % (nombre, codigo, salida.strip()[:50]))
+                comprobar(codigo == 2 and not r.llamadas and 'Plan9' in salida,
+                          'Plan9: %s dice que no está soportado, sale con %s y no ejecuta nada (%s)' % (nombre, codigo, salida.strip()[:50]))
             codigo, salida = captura(servicio.estado)
-            comprobar(codigo == 0 and 'Windows' in salida, 'Windows: --estado-servicio informa que no está soportado y sale con 0')
+            comprobar(codigo == 0 and 'Plan9' in salida, 'Plan9: --estado-servicio informa que no está soportado y sale con 0')
         finally:
             platform.system = real_system
         servicio.sistema = lambda: 'Darwin'
@@ -253,6 +259,305 @@ def en_proceso(servicio, tmp, comprobar):
             comprobar(codigo != 0, 'puerto %d: se rechaza' % puerto_malo)
     finally:
         subprocess.run = real_run
+        for n, v in guardado.items():
+            setattr(servicio, n, v)
+
+
+def escribe(ruta, texto):
+    with open(ruta, 'w', encoding='utf-8') as fh:
+        fh.write(texto)
+
+
+def en_windows_e8fb(servicio, tmp, comprobar):
+    """La comprobación 10 (E8f-B1): el servicio de Windows, simulado en macOS. Nada se ejecuta de verdad: `runner` y `lanzar` falsos."""
+    real_run = subprocess.run
+    subprocess.run = sin_subprocess_real
+    guardado = {n: getattr(servicio, n) for n in ('home', 'sistema', 'datos', 'python', 'escucha', 'lanzar') if hasattr(servicio, n)}
+    appdata = os.environ.pop('APPDATA', None)
+    try:
+        casa = os.path.join(tmp, 'casa-w')
+        os.makedirs(casa)
+        datos = os.path.join(tmp, 'datos w')                       # con espacio, a propósito
+        script = os.path.join(tmp, 'plugin w', 'oficina.py')
+        carpeta_py = os.path.join(tmp, 'py')
+        os.makedirs(carpeta_py)
+        for n in ('python.exe', 'pythonw.exe'):
+            open(os.path.join(carpeta_py, n), 'w', encoding='utf-8').close()
+        servicio.home = lambda: casa
+        servicio.sistema = lambda: 'Windows'
+        servicio.datos = lambda: datos
+        servicio.python = lambda: os.path.join(carpeta_py, 'python.exe')
+        servicio.escucha = lambda puerto: False
+        inicio = os.path.join(casa, 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+        cmd = os.path.join(inicio, 'navis-raid.cmd')
+        pid = os.path.join(datos, 'servicio.pid')
+        pythonw = os.path.join(carpeta_py, 'pythonw.exe')
+
+        class Lanzador:
+            def __init__(self, lanza=None):
+                self.llamadas, self.lanza = [], lanza
+
+            def __call__(self, args, entorno):
+                self.llamadas.append((list(args), dict(entorno)))
+                if self.lanza:
+                    raise self.lanza
+                return None
+
+        # S1 · el contenido y su camino de vuelta
+        texto = servicio.texto_cmd(pythonw, script, 8765, datos, {'CLAUDE_CONFIG_DIR': 'C:\\Users\\Ana\\.claude', 'NAVIS_RAID_SERVICIO': '1'})
+        leido = servicio.leer_cmd(texto)
+        comprobar(leido.get('python') == pythonw and leido.get('script') == script and leido.get('puerto') == 8765
+                  and leido.get('datos') == datos and leido.get('entorno') == {'CLAUDE_CONFIG_DIR': 'C:\\Users\\Ana\\.claude'},
+                  'Windows: leer_cmd(texto_cmd(...)) devuelve los mismos valores (%r)' % (leido,))
+        comprobar('set "NAVIS_RAID_SERVICIO=1"' in texto and 'start ""' in texto and '--serve 8765' in texto,
+                  'Windows: el .cmd pone NAVIS_RAID_SERVICIO=1 con set "..." y lanza con start "" ... --serve <puerto>')
+        for malo in ('C:\\100%\\oficina.py', 'C:\\a"b\\oficina.py', 'C:\\a\nb\\oficina.py'):
+            try:
+                servicio.texto_cmd(pythonw, malo, 8765, datos)
+                comprobar(False, 'Windows: texto_cmd rechaza %r' % malo)
+            except ValueError:
+                comprobar(True, 'Windows: texto_cmd rechaza %r' % malo)
+
+        # S1 · instalar
+        r, l = Runner(), Lanzador()
+        codigo, salida = captura(servicio.instalar, 8765, script, runner=r, lanzar=l)
+        comprobar(codigo == 0 and os.path.isfile(cmd), 'Windows: instalar escribe el .cmd en la carpeta Inicio y sale con 0 (%s)' % salida.strip()[:80])
+        comprobar(len(l.llamadas) == 1 and l.llamadas[0][0] == [pythonw, '-B', script, '--serve', '8765']
+                  and l.llamadas[0][1].get('NAVIS_RAID_DATA') == datos and l.llamadas[0][1].get('NAVIS_RAID_SERVICIO') == '1',
+                  'Windows: instalar arranca el servidor ya, una vez, con pythonw, --serve 8765 y NAVIS_RAID_DATA (%r)' % (l.llamadas,))
+        comprobar(not r.llamadas, 'Windows: instalar sin servicio previo no llama a tasklist ni taskkill (%r)' % (r.llamadas,))
+        with open(cmd, encoding='utf-8') as fh:
+            leido = servicio.leer_cmd(fh.read())
+        comprobar(leido.get('script') == script and leido.get('puerto') == 8765 and leido.get('python') == pythonw,
+                  'Windows: el .cmd escrito se lee de vuelta (%r)' % (leido,))
+        # sin pythonw.exe al lado: python.exe
+        os.remove(pythonw)
+        l2 = Lanzador()
+        captura(servicio.instalar, 8766, script, runner=Runner(), lanzar=l2)
+        comprobar(l2.llamadas and l2.llamadas[0][0][0] == os.path.join(carpeta_py, 'python.exe'), 'Windows: sin pythonw.exe usa python.exe')
+        open(pythonw, 'w', encoding='utf-8').close()
+        os.remove(cmd)
+        for malo in ('C:\\100%\\oficina.py', 'C:\\a"b\\oficina.py'):
+            r, l = Runner(), Lanzador()
+            codigo, salida = captura(servicio.instalar, 8765, malo, runner=r, lanzar=l)
+            comprobar(codigo == 2 and not os.path.exists(cmd) and not l.llamadas and not r.llamadas,
+                      'Windows: instalar con %r sale con 2 y no escribe ni lanza nada' % malo)
+        # el puerto ocupado por otra cosa
+        servicio.escucha = lambda puerto: True
+        r, l = Runner(), Lanzador()
+        codigo, _ = captura(servicio.instalar, 8765, script, runner=r, lanzar=l)
+        comprobar(codigo == 4 and not os.path.exists(cmd) and not l.llamadas, 'Windows: puerto ocupado por otro → 4, nada escrito ni lanzado')
+        servicio.escucha = lambda puerto: False
+        # lanzar falla (no hay permiso)
+        l = Lanzador(lanza=PermissionError(13, 'Acceso denegado'))
+        codigo, salida = captura(servicio.instalar, 8765, script, runner=Runner(), lanzar=l)
+        comprobar(codigo == 1 and 'Acceso denegado' in salida, 'Windows: si lanzar falla, sale con 1 y dice el motivo')
+        # verificar: nada escucha → 5
+        os.remove(cmd)
+        codigo, salida = captura(servicio.instalar, 8765, script, runner=Runner(), lanzar=Lanzador(), dormir=lambda s: None, verificar=True)
+        comprobar(codigo == 5 and os.path.isfile(cmd), 'Windows: con verificar y nada escuchando, sale con 5 y queda instalado')
+
+        # S2 · reinstalar y quitar
+        def tasklist_con(imagen, pid_):
+            def f(args):
+                return 0
+            r_ = Runner()
+
+            def llamar(args):
+                r_.llamadas.append(list(args))
+                if args[0] == 'tasklist':
+                    return types.SimpleNamespace(returncode=0, stderr='', stdout='"%s","%d","Console","1","20,000 K"\r\n' % (imagen, pid_) if imagen else 'INFO: No tasks are running which match the specified criteria.\r\n')
+                return types.SimpleNamespace(returncode=0, stdout='', stderr='')
+            llamar.llamadas = r_.llamadas
+            return llamar
+
+        nada = lambda s_: None
+        vivo = [True]                                              # lo que escucha en 8765; taskkill lo apaga
+        servicio.escucha = lambda puerto: vivo[0] and puerto == 8765
+
+        def matando(f):
+            def g(args):
+                if args[0] == 'taskkill':
+                    vivo[0] = False
+                return f(args)
+            g.llamadas = f.llamadas if hasattr(f, 'llamadas') else []
+            return g
+
+        os.makedirs(datos, exist_ok=True)
+        vivo[0] = True
+        escribe(pid, '4321 8765')
+        r = tasklist_con('pythonw.exe', 4321)
+        rr = matando(r)
+        codigo, salida = captura(servicio.quitar, runner=rr, dormir=nada)
+        comprobar(codigo == 0 and ['taskkill', '/PID', '4321', '/F'] in r.llamadas, 'Windows: quitar con tasklist = pythonw.exe llama a taskkill /PID 4321 /F (%r)' % (r.llamadas,))
+        comprobar(any(c[0] == 'tasklist' and '/FO' in c and 'CSV' in c and 'PID eq 4321' in c for c in r.llamadas), 'Windows: quitar consulta tasklist /FI "PID eq N" /FO CSV /NH')
+        comprobar(not os.path.exists(cmd) and not os.path.exists(pid), 'Windows: quitar borra el .cmd y el .pid')
+        # PID reciclado: otra imagen
+        servicio._escribir(cmd, 'x')
+        vivo[0] = True
+        escribe(pid, '4321 8765')
+        r = tasklist_con('notepad.exe', 4321)
+        codigo, _ = captura(servicio.quitar, runner=r, dormir=nada)
+        comprobar(codigo == 0 and not any(c[0] == 'taskkill' for c in r.llamadas) and not os.path.exists(cmd) and not os.path.exists(pid),
+                  'Windows: PID reciclado (otra imagen) → no llama a taskkill y quita igual')
+        # el proceso ya no existe
+        servicio._escribir(cmd, 'x')
+        vivo[0] = True
+        escribe(pid, '4321 8765')
+        r = tasklist_con(None, 4321)
+        codigo, _ = captura(servicio.quitar, runner=r, dormir=nada)
+        comprobar(codigo == 0 and not any(c[0] == 'taskkill' for c in r.llamadas) and not os.path.exists(cmd), 'Windows: proceso ya muerto → sin taskkill, quita igual')
+        # sin .pid
+        servicio._escribir(cmd, 'x')
+        r = Runner()
+        codigo, _ = captura(servicio.quitar, runner=r, dormir=nada)
+        comprobar(codigo == 0 and not r.llamadas and not os.path.exists(cmd), 'Windows: sin servicio.pid no llama a nada y quita el .cmd')
+        # taskkill falla con otro error
+        servicio._escribir(cmd, 'x')
+        vivo[0] = True
+        escribe(pid, '4321 8765')
+
+        def mal_taskkill(args):
+            if args[0] == 'tasklist':
+                return types.SimpleNamespace(returncode=0, stderr='', stdout='"python.exe","4321","Console","1","20,000 K"\r\n')
+            return types.SimpleNamespace(returncode=1, stdout='', stderr='ERROR: Access is denied.')
+        codigo, salida = captura(servicio.quitar, runner=mal_taskkill, dormir=nada)
+        comprobar(codigo == 1 and os.path.isfile(cmd) and os.path.isfile(pid) and 'Access is denied' in salida,
+                  'Windows: si taskkill falla, sale con 1, deja el .cmd y el .pid y dice por qué')
+        # el proceso murió entre tasklist y taskkill (taskkill 128): no es fallo
+        def ya_muerto(args):
+            if args[0] == 'tasklist':
+                return types.SimpleNamespace(returncode=0, stderr='', stdout='"python.exe","4321","Console","1","20,000 K"\r\n')
+            return types.SimpleNamespace(returncode=128, stdout='', stderr='ERROR: The process "4321" not found.')
+        codigo, _ = captura(servicio.quitar, runner=ya_muerto, dormir=nada)
+        comprobar(codigo == 0 and not os.path.exists(cmd), 'Windows: taskkill con «no encontrado» (128) no es fallo')
+        # sin nada instalado
+        r = Runner()
+        codigo, salida = captura(servicio.quitar, runner=r, dormir=nada)
+        comprobar(codigo == 0 and not r.llamadas and salida.strip(), 'Windows: quitar sin servicio sale con 0 y no llama a nada')
+        # reinstalar: para al anterior antes de escribir y de lanzar
+        vivo[0] = False
+        captura(servicio.instalar, 8765, script, runner=Runner(), lanzar=Lanzador())
+        vivo[0] = True
+        escribe(pid, '999 8765')
+        vivo[0] = True
+        r, l = tasklist_con('python.exe', 999), Lanzador()
+        codigo, _ = captura(servicio.instalar, 8765, script, runner=matando(r), lanzar=l, dormir=nada)
+        comprobar(codigo == 0 and ['taskkill', '/PID', '999', '/F'] in r.llamadas and len(l.llamadas) == 1 and not os.path.exists(pid),
+                  'Windows: reinstalar para antes al servidor anterior (taskkill) y lanza el nuevo')
+        servicio._escribir(cmd, servicio.texto_cmd(pythonw, script, 8765, datos, {'NAVIS_RAID_SERVICIO': '1'}))
+        vivo[0] = True
+        escribe(pid, '999 8765')
+        l3 = Lanzador()
+        codigo, _ = captura(servicio.instalar, 8765, script, runner=mal_taskkill, lanzar=l3, dormir=nada)
+        comprobar(codigo == 1 and not l3.llamadas, 'Windows: si no se puede parar el servidor anterior, instalar sale con 1 y no lanza otro')
+        os.remove(cmd); os.remove(pid)
+
+        # C1 · un .pid viejo cuyo PID se reciclo en otro python: la imagen es python pero nada escucha en el puerto → no se mata
+        vivo[0] = False
+        servicio._escribir(cmd, 'x')
+        escribe(pid, '4321 8765')
+        r = tasklist_con('pythonw.exe', 4321)
+        codigo, _ = captura(servicio.quitar, runner=r, dormir=nada)
+        comprobar(codigo == 0 and not any(c[0] == 'taskkill' for c in r.llamadas) and not os.path.exists(cmd) and not os.path.exists(pid),
+                  'C1: imagen python pero nada escucha en el puerto del .pid → sin taskkill, quita y borra el .pid (%r)' % (r.llamadas,))
+        # C1 · el .pid viejo de solo PID se lee como «sin puerto»: usa el del .cmd
+        vivo[0] = False
+        captura(servicio.instalar, 8765, script, runner=Runner(), lanzar=Lanzador())
+        vivo[0] = True
+        escribe(pid, '4321')
+        r = tasklist_con('pythonw.exe', 4321)
+        codigo, _ = captura(servicio.quitar, runner=matando(r), dormir=nada)
+        comprobar(codigo == 0 and ['taskkill', '/PID', '4321', '/F'] in r.llamadas, 'C1: un .pid de solo PID sigue valiendo (el puerto sale del .cmd)')
+        # C2 · tasklist que falla no es «no es python»
+        vivo[0] = True
+        servicio._escribir(cmd, 'x')
+        escribe(pid, '4321 8765')
+
+        def tasklist_falla(args):
+            return types.SimpleNamespace(returncode=1, stdout='', stderr='ERROR: tasklist roto')
+        codigo, salida = captura(servicio.quitar, runner=tasklist_falla, dormir=nada)
+        comprobar(codigo == 1 and os.path.isfile(cmd) and os.path.isfile(pid), 'C2: tasklist con código 1 → quitar sale con 1 y deja el .cmd y el .pid (%s)' % salida.strip()[:60])
+        if os.path.exists(pid):
+            os.remove(pid)
+        # C3 · quitar con el servidor vivo sin .pid: lo dice
+        vivo[0] = True
+        servicio._escribir(cmd, servicio.texto_cmd(pythonw, script, 8765, datos, {'NAVIS_RAID_SERVICIO': '1'}))
+        codigo, salida = captura(servicio.quitar, runner=Runner(), dormir=nada)
+        comprobar(codigo == 0 and '8765' in salida and ('Horario de salida' in salida or 'Clock out' in salida),
+                  'C3: quitar con algo escuchando aún en el puerto del .cmd lo dice (%s)' % salida.strip().replace('\n', ' | ')[:120])
+        # C3 · reinstalar con el puerto aún ocupado tras parar → 4
+        servicio._escribir(cmd, servicio.texto_cmd(pythonw, script, 8765, datos, {'NAVIS_RAID_SERVICIO': '1'}))
+        escribe(pid, '4321 8765')
+        antes = open(cmd, encoding='utf-8').read()
+        l4 = Lanzador()
+        codigo, salida = captura(servicio.instalar, 8765, script, runner=tasklist_con('pythonw.exe', 4321), lanzar=l4, dormir=nada)   # taskkill «mata» pero sigue escuchando
+        comprobar(codigo == 4 and not l4.llamadas and open(cmd, encoding='utf-8').read() == antes,
+                  'C3: reinstalar con el puerto aún ocupado tras parar → 4, sin lanzar ni reescribir (%r)' % codigo)
+        os.remove(cmd)
+        if os.path.exists(pid):
+            os.remove(pid)
+        servicio.escucha = lambda puerto: False
+
+        # C4 · el .cmd va con CRLF
+        captura(servicio.instalar, 8765, script, runner=Runner(), lanzar=Lanzador())
+        with open(cmd, 'rb') as fh:
+            crudo = fh.read()
+        comprobar(b'\r\n' in crudo and b'\r\r\n' not in crudo and crudo.count(b'\n') == crudo.count(b'\r\n'),
+                  'C4: el .cmd escrito lleva \\r\\n en todas las líneas')
+        comprobar(servicio.leer_cmd(crudo.decode('utf-8')).get('puerto') == 8765, 'C4: leer_cmd lee el .cmd con CRLF')
+        os.remove(cmd)
+
+        # C5 · reabrir_flujos sin permiso de escritura no lanza
+        sin_permiso = os.path.join(tmp, 'sin-permiso')
+        os.makedirs(sin_permiso)
+        os.chmod(sin_permiso, 0o500)
+        servicio.datos = lambda: sin_permiso
+        so, se = sys.stdout, sys.stderr
+        try:
+            sys.stdout = sys.stderr = None
+            try:
+                servicio.reabrir_flujos()
+                lanzo = False
+            except Exception:
+                lanzo = True
+        finally:
+            sys.stdout, sys.stderr = so, se
+            os.chmod(sin_permiso, 0o700)
+        comprobar(not lanzo and (os.geteuid() != 0 or True), 'C5: reabrir_flujos con la carpeta de datos sin permiso de escritura no lanza')
+        servicio.datos = lambda: datos
+
+        # S3 · estado y leer
+        captura(servicio.instalar, 8765, script, runner=Runner(), lanzar=Lanzador())
+        info = servicio.leer()
+        comprobar(info['instalado'] and info['archivo'] == cmd and info['script'] == script and info['puerto'] == 8765 and info['datos'] == datos,
+                  'Windows: leer() lee el .cmd instalado (%r)' % (info,))
+        comprobar(info['script_existe'] is False and info['python_existe'] is True, 'Windows: leer() dice si el script y el intérprete existen')
+        servicio.escucha = lambda puerto: True
+        codigo, salida = captura(servicio.estado)
+        comprobar(codigo == 0 and cmd in salida and script in salida and datos in salida and '8765' in salida,
+                  'Windows: --estado-servicio imprime la ruta, el script, los datos y el puerto (%s)' % salida.strip().replace('\n', ' | ')[:100])
+        servicio.escucha = lambda puerto: False
+        os.remove(cmd)
+        codigo, salida = captura(servicio.estado)
+        comprobar(codigo == 0 and cmd in salida, 'Windows: sin .cmd, --estado-servicio dice «no instalado» con la ruta esperada')
+        # APPDATA manda cuando existe
+        os.environ['APPDATA'] = os.path.join(tmp, 'roaming')
+        comprobar(servicio.ruta_servicio() == os.path.join(tmp, 'roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', 'navis-raid.cmd'),
+                  'Windows: con APPDATA definida la carpeta Inicio cuelga de ella')
+        os.environ.pop('APPDATA')
+
+        # S5 · macOS y Linux no se ven afectados por lanzar ni por el pid
+        servicio.sistema = lambda: 'Linux'
+        servicio.home = lambda: casa
+        l = Lanzador()
+        r = Runner()
+        captura(servicio.instalar, 8765, script, runner=r, lanzar=l)
+        comprobar(not l.llamadas and r.llamadas and all(c[0] == 'systemctl' for c in r.llamadas), 'Linux: instalar no usa lanzar y solo llama a systemctl')
+    finally:
+        subprocess.run = real_run
+        if appdata is not None:
+            os.environ['APPDATA'] = appdata
         for n, v in guardado.items():
             setattr(servicio, n, v)
 

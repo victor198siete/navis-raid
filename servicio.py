@@ -1,6 +1,8 @@
-"""Navis Raid como servicio de usuario (E8e-1): un agente de launchd en macOS o una unidad de systemd en Linux.
+"""Navis Raid como servicio de usuario (E8e-1): un agente de launchd en macOS o una unidad de systemd en Linux; en Windows
+(E8f-B1), un `navis-raid.cmd` en la carpeta Inicio del usuario.
 
-El servicio arranca solo al iniciar sesión y se relanza si el servidor se cae (no si sale limpio, con código 0). Lo usan
+El servicio arranca solo al iniciar sesión y se relanza si el servidor se cae (no si sale limpio, con código 0) en macOS y
+Linux. En Windows NO se relanza si se cae: vuelve en el siguiente inicio de sesión o con `/navis-raid:start`. Lo usan
 las opciones de `oficina.py`:
   --instalar-servicio [puerto]   escribe el archivo del servicio y lo carga (8765 por defecto); si ya existía, lo reescribe
   --quitar-servicio              lo para y borra el archivo (si no existe, lo dice y sale con 0)
@@ -13,16 +15,22 @@ reintentar para siempre.
 Fuera de la carpeta del programa solo escribe el archivo del servicio:
   macOS  ~/Library/LaunchAgents/navis-raid.plist     (se carga con launchctl bootstrap gui/<uid>)
   Linux  ~/.config/systemd/user/navis-raid.service   (se activa con systemctl --user enable --now)
-y, dentro de la carpeta de datos, el `servicio.log` donde el servicio deja su salida.
+  Windows %APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\navis-raid.cmd   (sin permisos de administrador; al instalar
+         se lanza ya con `lanzar`, con pythonw.exe y sin ventana; sin APPDATA, <home>\\AppData\\Roaming\\...)
+y, dentro de la carpeta de datos, el `servicio.log` donde el servicio deja su salida (en Windows, con pythonw, no hay stdout:
+`reabrir_flujos` lo reabre sobre ese log) y, solo en Windows, `servicio.pid` («PID PUERTO» del servidor, para pararlo con `taskkill` solo si algo escucha en ese puerto).
 
 La lógica va separada de los efectos para poder probarla sin instalar nada:
-  - `texto_plist` y `texto_unit` son funciones puras (parámetros → texto);
-  - `leer_plist` y `leer_unit` hacen el camino de vuelta (texto → parámetros);
-  - `correr` ejecuta `launchctl`/`systemctl` con lista de argumentos, sin shell; `instalar` y `quitar` reciben un `runner`
-    (por defecto `correr`) que las pruebas sustituyen por uno falso;
+  - `texto_plist`, `texto_unit` y `texto_cmd` son funciones puras (parámetros → texto);
+  - `leer_plist`, `leer_unit` y `leer_cmd` hacen el camino de vuelta (texto → parámetros);
+  - `correr` ejecuta `launchctl`/`systemctl`/`tasklist`/`taskkill` con lista de argumentos, sin shell; `instalar` y `quitar`
+    reciben un `runner` (por defecto `correr`) que las pruebas sustituyen por uno falso; arrancar el servidor en Windows va
+    por `lanzar(args, entorno)` (un `Popen` desprendido), también sustituible;
   - la carpeta HOME, el sistema, el uid, el intérprete, la carpeta de datos y la prueba del puerto se resuelven en una
     función cada una (`home`, `sistema`, `uid`, `python`, `datos`, `escucha`), para sustituirlas en las pruebas.
 """
+import csv
+import io
 import os
 import platform
 import plistlib
@@ -30,6 +38,7 @@ import re
 import shlex
 import socket
 import subprocess
+import sys
 import time
 
 import config
@@ -43,7 +52,10 @@ ESPERA_ARRANQUE_S = 5      # cuánto espera `instalar(verificar=True)` a que el 
 PAUSA_ARRANQUE_S = 0.5
 # Variables de la terminal que se copian al servicio si están definidas y no vacías (NAVIS_RAID_DATA va aparte: es la carpeta de datos).
 VARIABLES = ('CLAUDE_CONFIG_DIR', 'NAVIS_RAID_CONFIG', 'NAVIS_RAID_SOLO_TERMINAL')
-SERVICIO = 'NAVIS_RAID_SERVICIO'      # =1 en el plist y el unit: `--serve` sabe que corre como servicio
+SERVICIO = 'NAVIS_RAID_SERVICIO'      # =1 en el plist, el unit y el .cmd: `--serve` sabe que corre como servicio
+SISTEMAS = ('Darwin', 'Linux', 'Windows')
+IMAGENES_PYTHON = ('python.exe', 'pythonw.exe')        # las únicas imágenes que `taskkill` puede matar (un PID viejo puede ser de otra cosa)
+TASKKILL_NO_ENCONTRADO = 128                           # `taskkill` de un proceso que ya no existe
 # `launchctl bootout` de algo que no está cargado: 3 («No such process», lo que da macOS hoy) o 113 («Could not find
 # specified service»); ver `launchctl error posix 3` y `launchctl error bootstrap 113`.
 BOOTOUT_NO_CARGADO = (3, 113)
@@ -99,10 +111,21 @@ def ruta_unit():
     return os.path.join(home(), '.config', 'systemd', 'user', NOMBRE + '.service')
 
 
+def ruta_cmd():
+    """El `.cmd` de la carpeta Inicio del usuario (Windows): bajo %APPDATA%, o bajo <home>\\AppData\\Roaming si no está definida."""
+    appdata = os.environ.get('APPDATA') or os.path.join(home(), 'AppData', 'Roaming')
+    return os.path.join(appdata, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup', NOMBRE + '.cmd')
+
+
+def ruta_pid(carpeta=None):
+    """`servicio.pid`: el PID del servidor que lanzó el servicio de Windows (en la carpeta de datos)."""
+    return os.path.join(carpeta or datos(), 'servicio.pid')
+
+
 def ruta_servicio():
     """El archivo del servicio en este sistema, o None si no hay soporte."""
     s = sistema()
-    return ruta_plist() if s == 'Darwin' else ruta_unit() if s == 'Linux' else None
+    return ruta_plist() if s == 'Darwin' else ruta_unit() if s == 'Linux' else ruta_cmd() if s == 'Windows' else None
 
 
 def ruta_log(carpeta=None):
@@ -163,6 +186,26 @@ def texto_unit(python_, script, puerto, carpeta, entorno=None):
         ''])
 
 
+def _para_cmd(s):
+    """`s`, o ValueError si lleva un salto de línea, una comilla doble o un %: en un `.cmd` rompería la línea o se expandiría."""
+    if any(c in s for c in '\n\r"%'):
+        raise ValueError(s)
+    return s
+
+
+def texto_cmd(python_, script, puerto, carpeta, entorno=None):
+    """El `.cmd` de la carpeta Inicio (Windows). `entorno`: variables además de NAVIS_RAID_DATA. ValueError si algún valor
+    lleva un salto de línea, una `"` o un `%`. `chcp 65001` para que cmd lea bien una ruta con acentos (el archivo va en UTF-8)."""
+    variables = dict({'NAVIS_RAID_DATA': carpeta}, **(entorno or {}))
+    return '\r\n'.join([                               # CRLF: cmd.exe lee mal las etiquetas y algunas líneas con solo LF
+        '@echo off',
+        'chcp 65001 >nul',
+        'rem Navis Raid (generado por --instalar-servicio): arranca el tablero al iniciar sesion. Quitalo con --quitar-servicio.',
+        ] + ['set "%s=%s"' % (_para_cmd(k), _para_cmd(v)) for k, v in variables.items()] + [
+        'start "" "%s" -B "%s" --serve %d' % (_para_cmd(python_), _para_cmd(script), int(puerto)),
+        ''])
+
+
 # ---------- el camino de vuelta ----------
 
 def _de_argumentos(args):
@@ -215,6 +258,30 @@ def leer_unit(contenido):
         return {}
 
 
+_START_CMD = re.compile(r'^start\s+""\s+"([^"]*)"\s+-B\s+"([^"]*)"\s+--serve\s+(\d+)\s*$', re.IGNORECASE)
+_SET_CMD = re.compile(r'^set\s+"([^=]+)=([^"]*)"\s*$', re.IGNORECASE)
+
+
+def leer_cmd(contenido):
+    """{'python', 'script', 'puerto', 'datos', 'entorno'} de un `.cmd` de Windows (texto); {} si no se entiende."""
+    try:
+        env, inicio = {}, None
+        for linea in contenido.splitlines():
+            linea = linea.strip()
+            m = _SET_CMD.match(linea)
+            if m:
+                env[m.group(1)] = m.group(2)
+                continue
+            m = _START_CMD.match(linea)
+            if m:
+                inicio = m
+        if not inicio:
+            return {}
+        return dict({'python': inicio.group(1), 'script': inicio.group(2), 'puerto': int(inicio.group(3))}, **_de_entorno(env))
+    except Exception:
+        return {}
+
+
 def leer():
     """Lo instalado, o {'instalado': False}: archivo, intérprete, script, puerto, datos, variables, si el intérprete y el
     script existen y si algo escucha."""
@@ -228,6 +295,9 @@ def leer():
         if s == 'Darwin':
             with open(ruta, 'rb') as fh:
                 info.update(leer_plist(fh.read()))
+        elif s == 'Windows':
+            with open(ruta, encoding='utf-8', errors='replace') as fh:
+                info.update(leer_cmd(fh.read()))
         else:
             with open(ruta, encoding='utf-8', errors='replace') as fh:
                 info.update(leer_unit(fh.read()))
@@ -247,6 +317,51 @@ def leer():
 def correr(args):
     """El runner por defecto: una orden como lista de argumentos, sin shell. Devuelve el resultado de subprocess.run."""
     return subprocess.run(list(args), capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=TIEMPO_ORDEN_S)
+
+
+def lanzar(args, entorno):
+    """Arranca el servidor de Windows desprendido de este proceso: sin consola, sin tuberías heredadas (con `correr` y
+    `capture_output`, `subprocess.run` esperaría al hijo hasta el tope) y en su propio grupo, para que cerrar la terminal
+    donde se instaló no lo mate. `entorno`: variables que se suman a las de este proceso. Lanza OSError si no puede."""
+    banderas = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+    return subprocess.Popen(list(args), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            close_fds=True, env=dict(os.environ, **entorno), creationflags=banderas)
+
+
+def reabrir_flujos():
+    """Con pythonw.exe (el servicio de Windows) `sys.stdout` y `sys.stderr` son None: se reabren, en append y en UTF-8, sobre
+    `servicio.log` de la carpeta de datos, para que lo que escribe `--serve` (y el aviso de puerto ocupado) quede ahí, como
+    en macOS y Linux. No hace nada si los dos existen. Devuelve True si reabrió alguno."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return False
+    try:
+        os.makedirs(datos(), exist_ok=True)
+        fh = open(ruta_log(), 'a', encoding='utf-8', errors='replace', buffering=1)
+    except OSError:                                    # sin permiso: el servidor arranca sin log (print a None no hace nada) en vez de morir
+        return False
+    if sys.stdout is None:
+        sys.stdout = fh
+    if sys.stderr is None:
+        sys.stderr = fh
+    return True
+
+
+def escribir_pid(carpeta=None, puerto=None):
+    """Anota el PID de este proceso (y el puerto en que escucha, si se da) en `servicio.pid`, como «PID PUERTO» (escritura atómica).
+    El puerto sirve para no matar a un python ajeno cuando el PID se recicló: ver `_parar_windows`."""
+    _escribir(ruta_pid(carpeta), '%d %d' % (os.getpid(), puerto) if puerto else str(os.getpid()))
+
+
+def borrar_pid(carpeta=None):
+    """Borra `servicio.pid` si es de este proceso (no el de otro servidor que lo reescribió)."""
+    ruta = ruta_pid(carpeta)
+    try:
+        with open(ruta, encoding='utf-8') as fh:
+            ajeno = fh.read().split()[0] != str(os.getpid())
+        if not ajeno:
+            os.remove(ruta)
+    except (OSError, ValueError, IndexError):
+        pass
 
 
 class _Fallo(Exception):
@@ -274,7 +389,7 @@ def _escribir(ruta, contenido):
     """Escritura atómica (temporal + os.replace); crea las carpetas que falten."""
     os.makedirs(os.path.dirname(ruta), exist_ok=True)
     tmp = ruta + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as fh:
+    with open(tmp, 'w', encoding='utf-8', newline='') as fh:      # sin traducir saltos: el .cmd lleva CRLF y en Windows no se duplica
         fh.write(contenido)
     os.replace(tmp, ruta)
 
@@ -305,29 +420,26 @@ def _espera_escucha(puerto, dormir, intentos=int(ESPERA_ARRANQUE_S / PAUSA_ARRAN
     return bool(escucha(puerto))
 
 
-def instalar(puerto, script, runner=None, dormir=time.sleep, verificar=False):
+def instalar(puerto, script, runner=None, dormir=time.sleep, verificar=False, lanzar=None):
     """--instalar-servicio: escribe el archivo del servicio (reescribe el que hubiera) y lo carga. Devuelve el código de
     salida: 0 bien, 1 si algo falló (permisos, launchctl/systemctl), 2 si el puerto no vale, un valor lleva un salto
     de línea o el sistema no está soportado, 4 si otra cosa ya usa el puerto (no se instala nada) y, solo con `verificar=True`
     (lo pide `oficina.py --instalar-servicio`), 5 si se instaló pero nada escucha en el puerto tras ~5 s (queda instalado;
-    el aviso lleva la última línea de `servicio.log`). Sin `verificar` no espera: devuelve 0 en cuanto el servicio carga."""
+    el aviso lleva la última línea de `servicio.log`). Sin `verificar` no espera: devuelve 0 en cuanto el servicio carga.
+    En Windows escribe el `.cmd` y arranca el servidor ya con `lanzar` (parámetro, o la función del módulo), tras parar el
+    anterior si lo había."""
     runner = runner or correr
     s = sistema()
-    if s not in ('Darwin', 'Linux'):
-        print(t('El servicio solo está soportado en macOS (launchd) y Linux (systemd); este sistema es {sistema}.', sistema=s))
+    if s not in SISTEMAS:
+        print(t('El servicio solo está soportado en macOS (launchd), Linux (systemd) y Windows (carpeta Inicio); este sistema es {sistema}.', sistema=s))
         return 2
     if not isinstance(puerto, int) or not 1 <= puerto <= 65535:
         print(t('Puerto no válido: {puerto} (debe estar entre 1 y 65535).', puerto=puerto))
         return 2
     if _ocupado_por_otro(puerto):                      # antes de escribir nada; ThreadingHTTPServer puede enlazar aun así (SO_REUSEADDR)
-        sugerido = puerto_libre(puerto + 1)
-        if sugerido:
-            print(t('El puerto {puerto} ya está en uso (¿una oficina lanzada a mano? Párala con Ctrl+C). O instala en otro puerto: /navis-raid:start {sugerido}',
-                    puerto=puerto, sugerido=sugerido))
-        else:
-            print(t('El puerto {puerto} ya está en uso (¿una oficina lanzada a mano? Párala con Ctrl+C) y no hay otro libre justo después; elige uno con /navis-raid:start <puerto>',
-                    puerto=puerto))
-        return 4
+        return _puerto_ocupado(puerto)
+    if s == 'Windows':
+        return _instalar_windows(puerto, script, runner, lanzar or globals()['lanzar'], dormir, verificar)
     ruta, carpeta, py = ruta_servicio(), datos(), python()
     existia = os.path.isfile(ruta)
     entorno = dict(entorno_terminal(), **{SERVICIO: '1'})
@@ -359,16 +471,121 @@ def instalar(puerto, script, runner=None, dormir=time.sleep, verificar=False):
         print(t('El archivo quedó escrito en {ruta}; corrige el problema y vuelve a lanzar --instalar-servicio.', ruta=ruta))
         return 1
     print(t('Servicio instalado: {ruta}', ruta=ruta))
+    return _comprobar_arranque(puerto, dormir, verificar)
+
+
+def _puerto_ocupado(puerto):
+    """Dice que el puerto está en uso (y sugiere otro) y devuelve 4."""
+    sugerido = puerto_libre(puerto + 1)
+    if sugerido:
+        print(t('El puerto {puerto} ya está en uso (¿una oficina lanzada a mano? Párala con Ctrl+C). O instala en otro puerto: /navis-raid:start {sugerido}',
+                puerto=puerto, sugerido=sugerido))
+    else:
+        print(t('El puerto {puerto} ya está en uso (¿una oficina lanzada a mano? Párala con Ctrl+C) y no hay otro libre justo después; elige uno con /navis-raid:start <puerto>',
+                puerto=puerto))
+    return 4
+
+
+def _comprobar_arranque(puerto, dormir, verificar):
+    """El final de `instalar`: con `verificar`, espera a que algo escuche (5 si no); si no, dice dónde estará el tablero."""
     if verificar and not _espera_escucha(puerto, dormir):
         linea = ultima_linea_log()
         print(t('Pero nada escucha en el puerto {puerto} tras {segundos} s. El servicio sigue instalado. Última línea de servicio.log: {linea}. Mira `--estado-servicio` (o /navis-raid:doctor).',
                 puerto=puerto, segundos=ESPERA_ARRANQUE_S, linea=linea or t('(no hay servicio.log o está vacío)')))
         return 5
     print(t('Navis Raid arrancará solo en cada inicio de sesión, en http://127.0.0.1:{puerto}/', puerto=puerto))
+    if sistema() == 'Windows':
+        print(t('En Windows no se relanza si se cae: vuelve en el siguiente inicio de sesión o con /navis-raid:start.'))
     return 0
 
 
-def quitar(runner=None):
+def _leer_pid():
+    """(pid, puerto) de `servicio.pid` («PID PUERTO»; el formato viejo, solo PID, da puerto None), o None si no hay o no se entiende."""
+    try:
+        with open(ruta_pid(), encoding='utf-8') as fh:
+            partes = fh.read().split()
+        return int(partes[0]), (int(partes[1]) if len(partes) > 1 else None)
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+def _parar_windows(runner):
+    """Para el servidor que lanzó el servicio, si hay `servicio.pid`. Solo lo mata si ese PID sigue siendo un python Y algo
+    escucha en el puerto anotado (sin puerto, el del `.cmd`): si el servidor murió sin limpiar, Windows puede haber reciclado
+    el PID en otro python del usuario, y ese no se toca. Sin `servicio.pid` o con el proceso ya muerto no hay nada que parar.
+    Devuelve True si mandó `taskkill`. Lanza _Fallo si `tasklist` (cualquier código distinto de 0) o `taskkill` no pueden
+    ejecutarse o fallan de verdad. No borra el `.pid`."""
+    leido = _leer_pid()
+    if not leido:
+        return False
+    pid, puerto = leido
+    r = _orden(runner, ['tasklist', '/FI', 'PID eq %d' % pid, '/FO', 'CSV', '/NH'])
+    imagenes = []
+    for fila in csv.reader(io.StringIO(r.stdout or '')):
+        if fila:
+            imagenes.append(fila[0].strip().lower())
+    if not any(i in IMAGENES_PYTHON for i in imagenes):
+        return False
+    puerto = puerto or leer().get('puerto')
+    if not puerto or not escucha(puerto):              # PID viejo: el servidor ya no está y ese python es de otro
+        return False
+    _orden(runner, ['taskkill', '/PID', str(pid), '/F'],
+           tolerar=lambda r: r.returncode == TASKKILL_NO_ENCONTRADO or 'not found' in ((r.stderr or '') + (r.stdout or '')).lower())
+    return True
+
+
+def _sigue_escuchando(puerto, mato, dormir):
+    """¿Sigue algo en `puerto`? Tras un `taskkill` espera hasta ~2 s a que el sistema suelte el puerto."""
+    for _ in range(4 if mato else 0):
+        if not escucha(puerto):
+            return False
+        dormir(PAUSA_ARRANQUE_S)
+    return bool(escucha(puerto))
+
+
+def interprete_windows():
+    """`pythonw.exe` (sin ventana) de la carpeta del intérprete actual; si no está, el propio intérprete."""
+    py = python()
+    w = os.path.join(os.path.dirname(py), 'pythonw.exe')
+    return w if os.path.isfile(w) else py
+
+
+def _instalar_windows(puerto, script, runner, lanzar_, dormir, verificar):
+    """`instalar` en Windows (el puerto ya está validado): `.cmd` en la carpeta Inicio y servidor arrancado ya."""
+    ruta, carpeta, py = ruta_cmd(), datos(), interprete_windows()
+    entorno = dict(entorno_terminal(), **{SERVICIO: '1'})
+    try:
+        contenido = texto_cmd(py, script, puerto, carpeta, entorno)
+    except ValueError as e:                            # un salto de línea, una " o un % rompen el .cmd
+        print(t('No se puede instalar: un valor lleva un salto de línea, una comilla o un % y rompería el archivo del servicio: {valor!r}', valor=e.args[0] if e.args else ''))
+        return 2
+    try:
+        mato = _parar_windows(runner)                  # una reinstalación: el servidor anterior sigue corriendo
+    except _Fallo:
+        print(t('No se pudo parar el servidor anterior; no se instaló nada nuevo.'))
+        return 1
+    if _sigue_escuchando(puerto, mato, dormir):        # un servidor vivo sin .pid (o que no soltó el puerto): no fingir un éxito
+        return _puerto_ocupado(puerto)
+    try:
+        os.makedirs(carpeta, exist_ok=True)
+        _escribir(ruta, contenido)
+        if os.path.isfile(ruta_pid()):
+            os.remove(ruta_pid())
+    except OSError as e:
+        print(t('No se pudo escribir {ruta}: {motivo}', ruta=e.filename or ruta, motivo=e.strerror or e))
+        return 1
+    args = [py, '-B', script, '--serve', str(puerto)]
+    try:
+        lanzar_(args, dict({'NAVIS_RAID_DATA': carpeta}, **entorno))
+    except OSError as e:
+        print(t('No se pudo ejecutar `{orden}`: {motivo}', orden=' '.join(args), motivo=e.strerror or e))
+        print(t('El archivo quedó escrito en {ruta}; corrige el problema y vuelve a lanzar --instalar-servicio.', ruta=ruta))
+        return 1
+    print(t('Servicio instalado: {ruta}', ruta=ruta))
+    return _comprobar_arranque(puerto, dormir, verificar)
+
+
+def quitar(runner=None, dormir=time.sleep):
     """--quitar-servicio: lo para y borra el archivo. Sin servicio instalado, lo dice y devuelve 0. Solo tolera que no
     estuviera cargado (launchctl bootout con código 3 o 113; systemctl con «el unit no existe»): con cualquier otro fallo
     avisa, deja el archivo y devuelve 1, para no decir «quitado» de algo que sigue corriendo."""
@@ -376,13 +593,17 @@ def quitar(runner=None):
     s = sistema()
     ruta = ruta_servicio()
     if not ruta:
-        print(t('El servicio solo está soportado en macOS (launchd) y Linux (systemd); este sistema es {sistema}.', sistema=s))
+        print(t('El servicio solo está soportado en macOS (launchd), Linux (systemd) y Windows (carpeta Inicio); este sistema es {sistema}.', sistema=s))
         return 2
-    if not os.path.isfile(ruta):
+    if not os.path.isfile(ruta) and not (s == 'Windows' and os.path.isfile(ruta_pid())):
         print(t('No hay servicio instalado (no existe {ruta}).', ruta=ruta))
         return 0
+    puerto_cmd = leer().get('puerto') if s == 'Windows' else None
+    mato = False
     try:
-        if s == 'Darwin':
+        if s == 'Windows':
+            mato = _parar_windows(runner)
+        elif s == 'Darwin':
             _orden(runner, ['launchctl', 'bootout', 'gui/%d/%s' % (uid(), NOMBRE)], tolerar=lambda r: r.returncode in BOOTOUT_NO_CARGADO)
         else:
             _orden(runner, ['systemctl', '--user', 'disable', '--now', NOMBRE],
@@ -391,9 +612,12 @@ def quitar(runner=None):
         print(t('No se pudo parar el servicio; el archivo {ruta} sigue ahí.', ruta=ruta))
         return 1
     try:
-        os.remove(ruta)
+        if os.path.isfile(ruta):
+            os.remove(ruta)
+        if s == 'Windows' and os.path.isfile(ruta_pid()):
+            os.remove(ruta_pid())
     except OSError as e:
-        print(t('No se pudo borrar {ruta}: {motivo}', ruta=ruta, motivo=e.strerror or e))
+        print(t('No se pudo borrar {ruta}: {motivo}', ruta=e.filename or ruta, motivo=e.strerror or e))
         return 1
     if s == 'Linux':
         try:
@@ -401,6 +625,8 @@ def quitar(runner=None):
         except _Fallo:
             pass
     print(t('Servicio quitado: {ruta}', ruta=ruta))
+    if puerto_cmd and _sigue_escuchando(puerto_cmd, mato, dormir):
+        print(t('Algo sigue escuchando en el puerto {puerto}; ciérralo con el botón Horario de salida.', puerto=puerto_cmd))
     return 0
 
 
@@ -444,7 +670,7 @@ def estado():
     """--estado-servicio: lo que hay instalado. Devuelve 0 (es solo información)."""
     info = leer()
     if not info['archivo']:
-        print(t('El servicio solo está soportado en macOS (launchd) y Linux (systemd); este sistema es {sistema}.', sistema=info['sistema']))
+        print(t('El servicio solo está soportado en macOS (launchd), Linux (systemd) y Windows (carpeta Inicio); este sistema es {sistema}.', sistema=info['sistema']))
         return 0
     if not info['instalado']:
         print(t('Servicio: no instalado (se esperaría en {ruta}).', ruta=info['archivo']))

@@ -1,18 +1,23 @@
 ---
 description: Stop Navis Raid and remove its user service (it will no longer start at login)
-allowed-tools: Bash(python3 *)
+allowed-tools: Bash(python3 *), Bash(py *), Bash(python *)
 ---
 
 Stop Navis Raid and remove its service. Do exactly these steps, in this order, and nothing else:
 
-1. Run this command with the Bash tool (it stops the launchd agent or systemd user unit and deletes its file; if there
-   is no service, it says so and nothing else happens):
+1. Find the Python command, `PY`. Run `python3 --version`; if it fails, prints nothing or prints a version older
+   than 3.9, run `py -3 --version`, and if that fails too, `python --version`. `PY` is the first of `python3`,
+   `py -3` and `python` that prints Python 3.9 or newer (on Windows `python3` is usually missing or only points to the
+   Microsoft Store, and `py` is the Python launcher). If none does, tell the user that Navis Raid needs Python 3.9 or
+   newer and stop. Use that same `PY` in every command below, written in place of `PY`.
+2. Run this command with the Bash tool (it stops the launchd agent, the systemd user unit or, on Windows, the server
+   started from the Startup folder, and deletes its file; if there is no service, it says so and nothing else happens):
 
    ```
-   NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" python3 -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --quitar-servicio
+   NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" PY -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --quitar-servicio
    ```
 
-2. Read its output and its exit code.
+3. Read its output and its exit code.
    - **It worked (exit code 0):** answer in at most two lines: Navis Raid is stopped and will no longer start at login
      (or that there was no service to remove, if that is what it said), and that `/navis-raid:start` installs it again.
    - **It failed because of permissions** (the output mentions `Operation not permitted`, `PermissionError`,
@@ -22,6 +27,6 @@ Stop Navis Raid and remove its service. Do exactly these steps, in this order, a
      their own terminal:
 
      ```
-     NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" python3 -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --quitar-servicio
+     NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" PY -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --quitar-servicio
      ```
    - **It failed for any other reason:** show its output as it is and stop.

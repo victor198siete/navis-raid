@@ -11,8 +11,8 @@ plain Python 3 with no dependencies, and it serves only on `127.0.0.1`.
 ## Requirements
 
 - Python 3.9 or newer (tested with the 3.9 that ships with macOS and with 3.14). 3.8 is not tested.
-- macOS or Linux, with Claude Code installed and used at least once (there must be transcripts to read). Windows:
-  run it by hand (`python oficina.py --serve`), without the background service or the chat (see Quick start).
+- macOS, Linux or Windows, with Claude Code installed and used at least once (there must be transcripts to read). On
+  Windows there is no chat, and the service does not restart by itself after a crash (see Quick start).
 - The Claude desktop app is optional. If it is installed on macOS, Navis Raid also uses its session titles, pinned
   sessions, scheduled tasks and sidebar groups (each group becomes a floor).
 
@@ -28,8 +28,8 @@ This repository is both a Claude Code plugin and a one-plugin marketplace. In a 
 
 `/plugin install` opens the plugin's details so you can pick a scope; after installing, run `/reload-plugins` if Claude
 Code says a reload is needed. `/navis-raid:start` installs Navis Raid as a **user service** (a launchd agent on macOS,
-a systemd user unit on Linux), so it starts by itself at every login and restarts if it crashes, and tells you the
-address, <http://127.0.0.1:8765>. `/navis-raid:start [port]` takes an optional port (8765 by default). If something else
+a systemd user unit on Linux, a `navis-raid.cmd` in the Startup folder on Windows), so it starts by itself at every
+login and, on macOS and Linux, restarts if it crashes, and tells you the address, <http://127.0.0.1:8765>. `/navis-raid:start [port]` takes an optional port (8765 by default). If something else
 already listens on that port (for example a Navis Raid you started by hand), it installs nothing, says so right away and
 suggests the first free port after it, for example `/navis-raid:start 8766`; it does not run that command by itself.
 If it installs but nothing listens on the port within about 5 seconds (for example the service crashes on start),
@@ -68,17 +68,22 @@ python3 oficina.py --serve 8765
 Then open <http://127.0.0.1:8765/>. The page regenerates on every load and refreshes itself every few seconds.
 Stop the server with Ctrl+C.
 
-**On Windows** start it by hand from a terminal (`py` or `python`, whichever you have; there is no `python3` command by default):
+**On Windows** the plugin's commands find Python as `py` or `python` (there is no `python3` command by default). To
+start it by hand from a terminal:
 
 ```bat
 cd path\to\oficina
 py oficina.py --serve 8765
 ```
 
-`py oficina.py --doctor` works too. On Windows there is no background service (`--instalar-servicio` and
-`--quitar-servicio` answer that the service is not supported) and the chat is off, even if `chat_sesion` is set in
-`config.json`, because it talks to Claude Code through Unix sockets. Everything else is the same. This level was
-checked **simulated** (a test pretends to be Windows), not on a real Windows machine yet.
+`py oficina.py --doctor` works too. `py oficina.py --instalar-servicio [PORT]` (what `/navis-raid:start` runs) writes
+`navis-raid.cmd` in your Startup folder (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`), which starts the
+server with `pythonw` (no window) at every login, and starts it right away; it needs no administrator rights. Unlike
+launchd and systemd it does **not** restart the server after a crash: it comes back at the next login or with
+`/navis-raid:start`. `--quitar-servicio` stops the server it started (it records its process id in `servicio.pid`
+and only stops a Python process that still serves that port) and deletes the `.cmd`. The chat is off on Windows, even
+if `chat_sesion` is set in `config.json`, because it talks to Claude Code through Unix sockets. Everything else is
+the same. Windows support was checked **simulated** (tests pretend to be Windows), not on a real Windows machine yet.
 
 The file names and some folder names are in Spanish (`oficina` = office, `pruebas` = tests, `bitacora` = log); the
 interface itself can be shown in English (see Language).
@@ -96,7 +101,7 @@ the script by default; see `NAVIS_RAID_DATA` under Configuration).
 | `python3 oficina.py --solo-terminal` | Ignores the desktop app's files; the session list comes only from the transcripts. Combine it with `--serve` or `--watch`. Also set by `NAVIS_RAID_SOLO_TERMINAL=1`. |
 | `python3 oficina.py --compacto` | Draws the scene at a smaller scale. Combine it with the other options. |
 | `python3 oficina.py --doctor` | Read-only diagnostic of what was found on this machine (see Troubleshooting). Also accepted as `doctor`. |
-| `python3 oficina.py --instalar-servicio [PORT]` | Installs Navis Raid as a user service that serves on `PORT` (default 8765): `~/Library/LaunchAgents/navis-raid.plist` loaded with `launchctl` on macOS, `~/.config/systemd/user/navis-raid.service` enabled with `systemctl --user` on Linux. It starts at every login and restarts after a crash, not after a clean exit. It passes `NAVIS_RAID_DATA` and, if they are set and not empty in the terminal where you run it, `CLAUDE_CONFIG_DIR`, `NAVIS_RAID_CONFIG` and `NAVIS_RAID_SOLO_TERMINAL` (`--estado-servicio` shows which ones). If the port is already in use the service does not start, does not retry, and exits with 0 after writing one line to `servicio.log` (see Troubleshooting). If something else already listens on `PORT`, it installs nothing and exits with 4, suggesting another port. If the service is installed but nothing listens after 5 seconds, it exits with 5 (the service stays installed). A path or variable that contains a line break is refused (exit code 2), because it would inject lines into the systemd unit. Running it again rewrites the file, so it also repoints the service after an update. |
+| `python3 oficina.py --instalar-servicio [PORT]` | Installs Navis Raid as a user service that serves on `PORT` (default 8765): `~/Library/LaunchAgents/navis-raid.plist` loaded with `launchctl` on macOS, `~/.config/systemd/user/navis-raid.service` enabled with `systemctl --user` on Linux, `navis-raid.cmd` in the Startup folder on Windows (started right away, with `pythonw`). It starts at every login and, on macOS and Linux, restarts after a crash, not after a clean exit. It passes `NAVIS_RAID_DATA` and, if they are set and not empty in the terminal where you run it, `CLAUDE_CONFIG_DIR`, `NAVIS_RAID_CONFIG` and `NAVIS_RAID_SOLO_TERMINAL` (`--estado-servicio` shows which ones). If the port is already in use the service does not start, does not retry, and exits with 0 after writing one line to `servicio.log` (see Troubleshooting). If something else already listens on `PORT`, it installs nothing and exits with 4, suggesting another port. If the service is installed but nothing listens after 5 seconds, it exits with 5 (the service stays installed). A path or variable that contains a line break is refused (exit code 2), because it would inject lines into the systemd unit. Running it again rewrites the file, so it also repoints the service after an update. |
 | `python3 oficina.py --quitar-servicio` | Stops the service and deletes its file. If there is none, it says so and exits with 0. It only tolerates "it was not loaded" (`launchctl bootout` exit code 3 or 113; `systemctl --user disable --now` saying the unit does not exist). With any other failure it prints the error, **keeps the file** and exits with a non-zero code, so it never says "removed" for a service that may still be running. |
 | `python3 oficina.py --estado-servicio` | Says whether the service is installed, where its file is, which `oficina.py` and which data folder it points to (and whether that `oficina.py` still exists), which of the variables above it carries (only the ones that are set), whether something is listening on its port, and, if nothing listens and the last line of `servicio.log` is the "port already in use" notice, that line. |
 
@@ -362,7 +367,8 @@ If you installed the service, remove it first, while the program is still there:
 `python3 oficina.py --quitar-servicio`. Otherwise the login item stays behind pointing to nothing, and the system
 keeps trying to start it. (`--estado-servicio` tells you whether it is installed; if the program is already gone,
 delete `~/Library/LaunchAgents/navis-raid.plist` after `launchctl bootout gui/$(id -u)/navis-raid`, or run
-`systemctl --user disable --now navis-raid` and delete `~/.config/systemd/user/navis-raid.service`.)
+`systemctl --user disable --now navis-raid` and delete `~/.config/systemd/user/navis-raid.service`; on Windows, delete
+`navis-raid.cmd` from the Startup folder.)
 
 Delete this folder. That removes the program, its generated pages and everything under `bitacora/` and `chat/`: it
 keeps nothing anywhere else. If you set `NAVIS_RAID_DATA`, delete that data folder too (it holds the pages, `bitacora/`

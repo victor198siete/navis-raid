@@ -1,27 +1,33 @@
 ---
 description: Install Navis Raid as a user service and show the address of the dashboard of your Claude Code sessions (http://127.0.0.1:8765 unless you give another port)
 argument-hint: "[port]"
-allowed-tools: Bash(python3 *)
+allowed-tools: Bash(python3 *), Bash(py *), Bash(python *)
 ---
 
 Install Navis Raid as a service of the user: it starts by itself at every login and restarts if it crashes. Do exactly
 these steps, in this order, and nothing else:
 
-1. Run `python3 --version`. If `python3` does not exist, tell the user that Navis Raid needs Python 3.9 or newer and stop.
+1. Find the Python command, `PY`. Run `python3 --version`; if it fails, prints nothing or prints a version older
+   than 3.9, run `py -3 --version`, and if that fails too, `python --version`. `PY` is the first of `python3`,
+   `py -3` and `python` that prints Python 3.9 or newer (on Windows `python3` is usually missing or only points to the
+   Microsoft Store, and `py` is the Python launcher). If none does, tell the user that Navis Raid needs Python 3.9 or
+   newer and stop. Use that same `PY` in every command below, written in place of `PY`.
 2. Decide the port, `PORT`: the argument the user gave, `$ARGUMENTS`, if it is a whole number between 1 and 65535 and
    nothing else. If it is empty, `PORT` is 8765. If it is anything else, `PORT` is 8765 and you say so in one line
    (never put the text of the argument in a command). Use that same `PORT` in every command and URL below.
-3. Run this command with the Bash tool (it installs a launchd agent on macOS or a systemd user unit on Linux, and
-   running it again just rewrites it, which points the service to the current version of the plugin):
+3. Run this command with the Bash tool (it installs a launchd agent on macOS, a systemd user unit on Linux or a
+   `navis-raid.cmd` in the Startup folder on Windows, and running it again just rewrites it, which points the service
+   to the current version of the plugin):
 
    ```
-   NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" python3 -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --instalar-servicio PORT
+   NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" PY -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --instalar-servicio PORT
    ```
 
 4. Read its output and its exit code.
    - **It worked (exit code 0):** answer in at most four lines:
      - the URL: http://127.0.0.1:PORT
-     - that Navis Raid now starts by itself at every login and restarts if it crashes
+     - that Navis Raid now starts by itself at every login and restarts if it crashes (on Windows it does not restart
+       by itself after a crash: it comes back at the next login or with `/navis-raid:start`)
      - that the data lives in `${CLAUDE_PLUGIN_DATA}`
      - how to remove it: `/navis-raid:stop`
    - **It failed because of permissions** (the output mentions `Operation not permitted`, `PermissionError`,
@@ -31,7 +37,7 @@ these steps, in this order, and nothing else:
      this exact line (with `PORT` filled in), in a code block, to paste in this session with a leading `!` or in their own terminal:
 
      ```
-     NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" python3 -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --instalar-servicio PORT
+     NAVIS_RAID_DATA="${CLAUDE_PLUGIN_DATA}" PY -B "${CLAUDE_PLUGIN_ROOT}/oficina.py" --instalar-servicio PORT
      ```
    - **The port is already in use (exit code 4):** nothing was installed. Show its message as it is and stop. Do not
      run anything else. The message ends with the command to use another port (`/navis-raid:start <free port>`):

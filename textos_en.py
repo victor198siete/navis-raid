@@ -181,8 +181,19 @@ EN = {
     'No se pudo ejecutar `{orden}`: {motivo}': 'Could not run `{orden}`: {motivo}',
     '`{orden}` falló (código {codigo}): {motivo}': '`{orden}` failed (code {codigo}): {motivo}',
     'sin mensaje': 'no message',
-    'El servicio solo está soportado en macOS (launchd) y Linux (systemd); este sistema es {sistema}.':
-        'The service is only supported on macOS (launchd) and Linux (systemd); this system is {sistema}.',
+    'El servicio solo está soportado en macOS (launchd), Linux (systemd) y Windows (carpeta Inicio); este sistema es {sistema}.':
+        'The service is only supported on macOS (launchd), Linux (systemd) and Windows (Startup folder); this system is {sistema}.',
+    # servicio de usuario en Windows (E8f-B1)
+    'No se puede instalar: un valor lleva un salto de línea, una comilla o un % y rompería el archivo del servicio: {valor!r}':
+        'Cannot install: a value contains a line break, a double quote or a % and would break the service file: {valor!r}',
+    'Algo sigue escuchando en el puerto {puerto}; ciérralo con el botón Horario de salida.': 'Something is still listening on port {puerto}; close it with the Clock out button.',
+    'No se pudo parar el servidor anterior; no se instaló nada nuevo.': 'Could not stop the previous server; nothing new was installed.',
+    'En Windows no se relanza si se cae: vuelve en el siguiente inicio de sesión o con /navis-raid:start.':
+        'On Windows it is not restarted if it crashes: it comes back at the next login or with /navis-raid:start.',
+    'Windows: servicio en la carpeta Inicio; no se relanza si se cae (vuelve en el siguiente inicio de sesión o con /navis-raid:start). Sin chat.':
+        'Windows: service in the Startup folder; it is not restarted if it crashes (it comes back at the next login or with /navis-raid:start). No chat.',
+    'Windows: servicio sin instalar (instálalo con /navis-raid:start, o arranca a mano con `python oficina.py --serve`) y sin chat.':
+        'Windows: service not installed (install it with /navis-raid:start, or start it by hand with `python oficina.py --serve`) and no chat.',
     'Puerto no válido: {puerto} (debe estar entre 1 y 65535).': 'Invalid port: {puerto} (it must be between 1 and 65535).',
     'No se pudo escribir {ruta}: {motivo}': 'Could not write {ruta}: {motivo}',
     'El archivo quedó escrito en {ruta}; corrige el problema y vuelve a lanzar --instalar-servicio.':
@@ -194,8 +205,6 @@ EN = {
     'No se pudo parar el servicio; el archivo {ruta} sigue ahí.': 'Could not stop the service; the file {ruta} is still there.',
     'No se pudo borrar {ruta}: {motivo}': 'Could not delete {ruta}: {motivo}',
     'Servicio quitado: {ruta}': 'Service removed: {ruta}',
-    'Windows: sin servicio en segundo plano (se arranca a mano con `python oficina.py --serve`) y sin chat.':
-        'Windows: no background service (start it by hand with `python oficina.py --serve`) and no chat.',
     'Chat: no disponible en Windows': 'Chat: not available on Windows',
     'Servicio: no instalado (se esperaría en {ruta}).': 'Service: not installed (it would be at {ruta}).',
     'Servicio: instalado en {ruta}': 'Service: installed at {ruta}',
